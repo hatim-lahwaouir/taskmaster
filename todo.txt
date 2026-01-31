@@ -1,0 +1,6 @@
+- first parssing the config file
+- checking if there is any invalid inputs
+
+- then start the program with all the cretiria  set in config file
+
+ 
