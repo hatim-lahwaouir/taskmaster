@@ -1,1 +1,7 @@
-https://www.golinuxcloud.com/golang-parse-yaml-file/ how to parse yaml files in golang
+|- https://www.golinuxcloud.com/golang-parse-yaml-file/ 
+|-> how to parse yaml files in golang
+
+|- https://stackoverflow.com/questions/26744873/converting-map-to-struct
+|-> how to convert a map to strutct in golnag
+
+
