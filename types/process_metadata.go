@@ -16,7 +16,7 @@ type ProcessMetadata struct {
     Workdir string `name:"workingdir"`
     Autostart bool `name:"autostart"`
     Autorestart string `name:"autorestart"`
-    Exitcodes []any `name:"exitcodes"`
+    Exitcodes []interface{} `name:"exitcodes"`
     Startretries int`name:"startretries"`
     Starttime int `name:"starttime"`
     Stopsignal string `name:"stopsignal"`
@@ -56,7 +56,7 @@ func SetField(obj interface{}, name string, value interface{}) error {
     val := reflect.ValueOf(value)
 
     if structFieldType != val.Type() {
-        return errors.New("Provided value type didn't match obj field type")
+        return errors.New("syntax error at " + name )
     }
 
     structFieldValue.Set(val)
@@ -68,6 +68,32 @@ func (s *ProcessMetadata) FillStruct(m map[string]interface{}) error {
         err := SetField(s, k, v)
         if err != nil {
             return err
+        }
+    }
+    return nil
+}
+
+func (s *ProcessMetadata) ExitStatusValidation() error {
+
+    if reflect.ValueOf(s.Exitcodes).Kind() != reflect.Slice {
+        return errors.New("Invalid Exit codes it must be an integer")
+    }
+
+    for _ , ele := range(s.Exitcodes){
+        if reflect.ValueOf(ele).Kind() != reflect.Int || ele.(int) < 0 || ele.(int) > 255 {
+            return errors.New("Invalid Exit code it must be between 255 and 0")
+        }
+    }
+    return nil
+}
+
+
+
+func (s *ProcessMetadata) EnvValidation() error {
+
+    for _ , ele := range(s.Env){
+        if reflect.ValueOf(ele).Kind() == reflect.Map || reflect.ValueOf(ele).Kind() == reflect.Slice || reflect.ValueOf(ele).Kind() == reflect.Slice {
+            return errors.New("env must be key:value pair")
         }
     }
     return nil

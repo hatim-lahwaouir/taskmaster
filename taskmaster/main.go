@@ -11,6 +11,13 @@ import (
 
 
 var  args types.CmdArgs
+var  Loggers  types.Loggers
+
+func init() {
+    // using this function for setting up loggers
+    Loggers.ErrorLogger =  log.New(os.Stdout, "Error: ", 0)
+    Loggers.InfoLogger  =  log.New(os.Stdout, "Info: ", 0)
+}
 
 func init() {
 	// using for parssing arguments
@@ -30,6 +37,7 @@ func init() {
 
 
 
+
 func Parsing(data []byte) error {
      programs := make(map[string]interface{})
 
@@ -38,7 +46,8 @@ func Parsing(data []byte) error {
          return err
      }
      if _, ok := programs["programs"]; !ok {
-        log.Fatal("we don't have programs")
+        Loggers.ErrorLogger.Println("we don't have programs")
+        os.Exit(1)
      } 
      programs = programs["programs"].(map[string]interface{})
      
@@ -47,7 +56,16 @@ func Parsing(data []byte) error {
          result := &types.ProcessMetadata{}
          err := result.FillStruct(m2)
          if err != nil {
-            log.Fatal(err)
+                Loggers.ErrorLogger.Println(err.Error())
+                os.Exit(1)
+         }
+         if err := result.ExitStatusValidation(); err != nil {
+                Loggers.ErrorLogger.Println(err.Error())
+                os.Exit(1)
+         }
+         if err := result.EnvValidation(); err != nil {
+                Loggers.ErrorLogger.Println(err.Error())
+                os.Exit(1)
          }
          fmt.Println(result)
      }
