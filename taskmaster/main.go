@@ -3,21 +3,19 @@ package main
 import (
 	"flag"
 	"fmt"
+    "errors"
     "github.com/hatim-lahwaouir/taskmaster/types"
-    "log"
 	"os"
+    "github.com/hatim-lahwaouir/taskmaster/loggers"
+    pm "github.com/hatim-lahwaouir/taskmaster/processMetadata" 
     "gopkg.in/yaml.v3"
 )
 
 
 var  args types.CmdArgs
-var  Loggers  types.Loggers
+var  Loggers types.Loggers  =  loggers.ProgramLogs
 
-func init() {
-    // using this function for setting up loggers
-    Loggers.ErrorLogger =  log.New(os.Stdout, "Error: ", 0)
-    Loggers.InfoLogger  =  log.New(os.Stdout, "Info: ", 0)
-}
+
 
 func init() {
 	// using for parssing arguments
@@ -38,39 +36,41 @@ func init() {
 
 
 
-func Parsing(data []byte) error {
-     programs := make(map[string]interface{})
+func Parsing(data []byte) ([]pm.ProcessMetadata, error) {
+     var (
+        programs map[string]interface{}
+        result []pm.ProcessMetadata
+        processMetadata pm.ProcessMetadata
+     )
+
+     programs = make(map[string]interface{})
 
      err := yaml.Unmarshal(data, &programs)
      if err != nil {
-         return err
+        return nil, fmt.Errorf("parssing yaml file ", err.Error())
      }
      if _, ok := programs["programs"]; !ok {
-        Loggers.ErrorLogger.Println("we don't have programs")
-        os.Exit(1)
+        return nil, errors.New("we don't have programs")
      } 
      programs = programs["programs"].(map[string]interface{})
      
-     for _ ,v := range(programs){
+     for key ,v := range(programs){
          m2 := v.(map[string]interface{})
-         result := &types.ProcessMetadata{}
-         err := result.FillStruct(m2)
+         processMetadata = pm.New()
+         processMetadata.ProcessName = key
+         err := processMetadata.FillStruct(m2)
          if err != nil {
-                Loggers.ErrorLogger.Println(err.Error())
-                os.Exit(1)
+                return nil, err
          }
-         if err := result.ExitStatusValidation(); err != nil {
-                Loggers.ErrorLogger.Println(err.Error())
-                os.Exit(1)
+         if err := processMetadata.ParseValidate(); err != nil {
+                return nil, err
          }
-         if err := result.EnvValidation(); err != nil {
-                Loggers.ErrorLogger.Println(err.Error())
-                os.Exit(1)
-         }
-         fmt.Println(result)
+         result = append(result, processMetadata)
      }
-	 return nil
+
+	 return result,nil
 }
+
 
 func OpenConfig(confpath string) ([]byte, error) {
 	return os.ReadFile(confpath)
@@ -79,17 +79,30 @@ func OpenConfig(confpath string) ([]byte, error) {
 
 
 func main() {
+    var (
+        processesMetadata []pm.ProcessMetadata
+    )
     // openning config file
 	data, err := OpenConfig(args.ConfigPath)
 	if err != nil {
-		fmt.Printf("Invalid path '%s'\n", os.Args[1])
+        Loggers.ErrorLogger.Printf("Reading config file %s\n",err.Error())
 		os.Exit(1)
 	}
 
     // Parsing config file 
-    err =  Parsing(data)
+    processesMetadata, err = Parsing(data)
     if err != nil {
-    	fmt.Printf("Invalid config file error '%s' \n", err.Error())
+    	Loggers.ErrorLogger.Printf("Invalid config file '%s' \n", err.Error())
 		os.Exit(1)
     }
+
+
+    for  _, pm := range(processesMetadata) {
+       if  err := pm.DataValidation(); err != nil {
+       	    Loggers.ErrorLogger.Printf("Invalid data, %s \n", err.Error())
+		    os.Exit(1)
+       }
+    }
+    Loggers.InfoLogger.Println(processesMetadata)
+
 }

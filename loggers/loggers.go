@@ -1,0 +1,19 @@
+package loggers 
+
+
+import (
+    "github.com/hatim-lahwaouir/taskmaster/types"
+    "os"
+    "log"
+)
+
+
+
+var  ProgramLogs  types.Loggers
+
+
+func init() {
+    // using this function for setting up loggers
+    ProgramLogs.ErrorLogger =  log.New(os.Stdout, "Error: ", 0)
+    ProgramLogs.InfoLogger  =  log.New(os.Stdout, "Info: ", 0)
+}
