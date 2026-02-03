@@ -5,3 +5,7 @@
 |-> how to convert a map to strutct in golnag
 
 
+|- https://medium.com/@caring_smitten_gerbil_914/running-external-programs-in-go-the-right-way-38b11d272cd1
+|- running extrnal programs in golang 
+
+
