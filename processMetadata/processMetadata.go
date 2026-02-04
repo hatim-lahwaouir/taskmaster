@@ -5,6 +5,7 @@ import (
 
 	"fmt"
     "errors"
+    "slices"
     "reflect"
     "syscall"
     "os"
@@ -75,9 +76,8 @@ func GetSingal(name string) (syscall.Signal, error) {
 }
 
 func  New() ProcessMetadata {
-
     // set some default value
-    return ProcessMetadata{Workdir: "/" }
+    return ProcessMetadata{Workdir: ".", Stdout: os.DevNull, Stderr: os.DevNull}
 }
 
 
@@ -112,7 +112,7 @@ func SetField(obj interface{}, name string, value interface{}) error {
     val := reflect.ValueOf(value)
 
     if structFieldType != val.Type() {
-        return errors.New("syntax error at " + name )
+        return fmt.Errorf("Syntax at %s ", name)
     }
 
     structFieldValue.Set(val)
@@ -208,5 +208,27 @@ func (s *ProcessMetadata) DataValidation() error {
     if s.Starttime < 0 || s.Stoptime < 0 {
         return fmt.Errorf("%s Invalid time it must be positive", s.ProcessName)
     }
-    return  err
+    if ! slices.Contains([]string{"unexpected", "always", "never"}, s.Autorestart) {
+        return fmt.Errorf("%s Invalid time autorestart value %s", s.ProcessName, s.Autorestart)
+    }
+
+    return  nil 
+}
+
+
+func (s *ProcessMetadata) SetupFiles() error {
+
+    f, err := os.Create(s.Stdout)
+    if err != nil {
+        return err
+    }
+    defer f.Close()
+    
+    f, err = os.Create(s.Stderr)
+    if err != nil {
+        return err
+    }
+    defer f.Close()
+
+    return nil
 }

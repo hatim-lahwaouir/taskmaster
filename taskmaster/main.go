@@ -76,6 +76,24 @@ func OpenConfig(confpath string) ([]byte, error) {
 	return os.ReadFile(confpath)
 }
 
+func Validation(pMetadata []pm.ProcessMetadata) error {
+    for  _, p := range(pMetadata) {
+       if  err := p.DataValidation(); err != nil {
+            return err 
+       }
+    }
+    return nil
+}
+
+func SetupFiles(pMetadata []pm.ProcessMetadata) error {
+    for  _, p := range(pMetadata) {
+       if  err := p.SetupFiles(); err != nil {
+            return err 
+       }
+    }
+    return nil
+}
+
 
 
 func main() {
@@ -96,13 +114,16 @@ func main() {
 		os.Exit(1)
     }
 
-
-    for  _, pm := range(processesMetadata) {
-       if  err := pm.DataValidation(); err != nil {
-       	    Loggers.ErrorLogger.Printf("Invalid data, %s \n", err.Error())
-		    os.Exit(1)
-       }
+    if  err := Validation(processesMetadata); err != nil {
+        Loggers.ErrorLogger.Printf("Invalid data, %s \n", err.Error())
+        os.Exit(1)
     }
+
+    if  err := SetupFiles(processesMetadata); err != nil {
+        Loggers.ErrorLogger.Printf("File %s \n", err.Error())
+        os.Exit(1)
+    }
+
     Loggers.InfoLogger.Println(processesMetadata)
 
 }
