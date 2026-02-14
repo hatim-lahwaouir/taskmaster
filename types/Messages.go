@@ -30,6 +30,7 @@ func GetProcessStatus(status ProcessStatus) string {
 }
 
 type Msg struct {
+    SenderId int
     Status ProcessStatus // process status returned from process running
     Task   ProcessTask  // task given from main thread to it's children
     ExitCode int

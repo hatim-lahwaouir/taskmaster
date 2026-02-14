@@ -3,7 +3,7 @@ programs:
     cmd: "/home/hlahwaou/bin/main"
     numprocs: 5 
     umask: 022 
-    autostart: true
+    autostart: false 
     autorestart: always 
     workingdir: "/tmp"
     exitcodes: 
