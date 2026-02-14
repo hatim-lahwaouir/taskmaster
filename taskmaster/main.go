@@ -7,6 +7,7 @@ import (
     "github.com/hatim-lahwaouir/taskmaster/types"
 	"os"
     "github.com/hatim-lahwaouir/taskmaster/loggers"
+    "github.com/hatim-lahwaouir/taskmaster/handlers"
     pm "github.com/hatim-lahwaouir/taskmaster/processMetadata" 
     "gopkg.in/yaml.v3"
 )
@@ -123,7 +124,7 @@ func main() {
         Loggers.ErrorLogger.Printf("File %s \n", err.Error())
         os.Exit(1)
     }
+    processesMetadata = pm.Flatten(processesMetadata)
 
-    Loggers.InfoLogger.Println(processesMetadata)
-
+    handlers.MainHandler(processesMetadata)
 }

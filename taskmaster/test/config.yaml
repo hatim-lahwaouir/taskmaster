@@ -1,7 +1,7 @@
 programs:
   MyProgram:
     cmd: "/home/hlahwaou/bin/main"
-    numprocs: 1
+    numprocs: 5 
     umask: 022 
     autostart: true
     autorestart: always 

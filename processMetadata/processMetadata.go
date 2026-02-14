@@ -7,7 +7,7 @@ import (
     "errors"
     "slices"
     "reflect"
-    "syscall"
+    "github.com/hatim-lahwaouir/taskmaster/utils"
     "os"
 )
 
@@ -31,55 +31,27 @@ type ProcessMetadata struct {
 }
 
 
-var signals  = map[string]syscall.Signal{
-		"ABRT":   syscall.SIGABRT,
-		"ALRM":   syscall.SIGALRM,
-		"BUS":    syscall.SIGBUS,
-		"CHLD":   syscall.SIGCHLD,
-		"CONT":   syscall.SIGCONT,
-		"FPE":    syscall.SIGFPE,
-		"HUP":    syscall.SIGHUP,
-		"ILL":    syscall.SIGILL,
-		"INT":    syscall.SIGINT,
-		"IO":     syscall.SIGIO,
-		"KILL":   syscall.SIGKILL,
-		"PIPE":   syscall.SIGPIPE,
-		"PROF":   syscall.SIGPROF,
-		"PWR":    syscall.SIGPWR,
-		"QUIT":   syscall.SIGQUIT,
-		"SEGV":   syscall.SIGSEGV,
-		"STKFLT": syscall.SIGSTKFLT,
-		"STOP":   syscall.SIGSTOP,
-		"SYS":    syscall.SIGSYS,
-		"TERM":   syscall.SIGTERM,
-		"TRAP":   syscall.SIGTRAP,
-		"TSTP":   syscall.SIGTSTP,
-		"TTIN":   syscall.SIGTTIN,
-		"TTOU":   syscall.SIGTTOU,
-		"URG":    syscall.SIGURG,
-		"USR1":   syscall.SIGUSR1,
-		"USR2":   syscall.SIGUSR2,
-		"VTALRM": syscall.SIGVTALRM,
-		"WINCH":  syscall.SIGWINCH,
-		"XCPU":   syscall.SIGXCPU,
-		"XFSZ":   syscall.SIGXFSZ,
-}
-
-func GetSingal(name string) (syscall.Signal, error) {
-    val, ok := signals[name]
-
-    if ! ok {
-
-        return 0, errors.New("Invalid signal name")
-    }
-    return  val, nil
-}
-
 func  New() ProcessMetadata {
     // set some default value
-    return ProcessMetadata{Workdir: ".", Stdout: os.DevNull, Stderr: os.DevNull}
+    return ProcessMetadata{NumProcess: 1 ,Workdir: ".", Stdout: os.DevNull, Stderr: os.DevNull}
 }
 
+func Flatten(pmetadata []ProcessMetadata) []ProcessMetadata{
+
+
+    var (
+        result []ProcessMetadata
+    )
+    for _, p := range(pmetadata) {
+        for  i := 0;  i < p.NumProcess; i+= 1 {
+
+            result = append(result, p) 
+            result[len(result) - 1].NumProcess = 1  
+        }
+    }
+
+    return result
+}
 
 
 func SetField(obj interface{}, name string, value interface{}) error {
@@ -200,7 +172,7 @@ func (s *ProcessMetadata) DataValidation() error {
 
 
     // validating the signal name
-    if _ , ok := signals[s.StopSignal]; len(s.StopSignal) != 0 &&  !ok{
+    if _ , err := utils.GetSignal(s.StopSignal); len(s.StopSignal) != 0 &&  err != nil{
         return fmt.Errorf("%s Invalid signal '%s'", s.ProcessName,s.StopSignal)
     }
 
@@ -211,7 +183,16 @@ func (s *ProcessMetadata) DataValidation() error {
     if ! slices.Contains([]string{"unexpected", "always", "never"}, s.Autorestart) {
         return fmt.Errorf("%s Invalid time autorestart value %s", s.ProcessName, s.Autorestart)
     }
+    if "unexpected" == s.Autorestart  && len(s.Exitcodes) == 0 {
+        return fmt.Errorf("%s autorestart set to unexpected and no exitcodes ", s.ProcessName)
+    }
 
+    if s.Startretries < 0 {
+        return fmt.Errorf("%s invalid Startretries", s.ProcessName)
+    }
+    if  s.NumProcess <= 0 {
+        return fmt.Errorf("%s invalid num process provided ", s.ProcessName)
+    }
     return  nil 
 }
 
