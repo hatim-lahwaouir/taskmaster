@@ -3,6 +3,7 @@ package processMetadata
 import (
 	"errors"
 	"fmt"
+    "strings"
 	"github.com/hatim-lahwaouir/taskmaster/utils"
 	"os"
 	"reflect"
@@ -13,16 +14,16 @@ type ProcessMetadata struct {
 	ProcessName  string
 	User         string         `name: User`
 	Cmd          string         `name:"cmd"`
-	NumProcess   int            `name:"numprocs"`
-	Umask        int            `name:"umask"`
+	NumProcess   int64          `name:"numprocs"`
+	Umask        int64          `name:"umask"`
 	Workdir      string         `name:"workingdir"`
 	Autostart    bool           `name:"autostart"`
 	Autorestart  string         `name:"autorestart"`
 	Exitcodes    []interface{}  `name:"exitcodes"`
-	Startretries int            `name:"startretries"`
-	Starttime    int            `name:"starttime"`
+	Startretries int64            `name:"startretries"`
+	Starttime    int64          `name:"starttime"`
 	StopSignal   string         `name:"stopsignal"`
-	Stoptime     int            `name:"stoptime"`
+	Stoptime     int64          `name:"stoptime"`
 	Stdout       string         `name:"stdout"`
 	Stderr       string         `name:"stderr"`
 	Env          map[string]any `name:"env"`
@@ -37,9 +38,10 @@ func Flatten(pmetadata []ProcessMetadata) []ProcessMetadata {
 
 	var (
 		result []ProcessMetadata
+        i int64
 	)
 	for _, p := range pmetadata {
-		for i := 0; i < p.NumProcess; i += 1 {
+		for i = 0; i < p.NumProcess; i += 1 {
 
 			result = append(result, p)
 			result[len(result)-1].NumProcess = 1
@@ -78,7 +80,12 @@ func SetField(obj interface{}, name string, value interface{}) error {
 
 	val := reflect.ValueOf(value)
 
-	if structFieldType != val.Type() {
+    if strings.HasPrefix(structFieldType.String(), "int") &&  strings.HasPrefix(val.Type().String(), "int") {
+	    structFieldValue.SetInt(val.Int())
+        return  nil
+    }
+
+	if structFieldType != val.Type(){
 		return fmt.Errorf("Syntax at %s ", name)
 	}
 
@@ -130,18 +137,11 @@ func (s *ProcessMetadata) ParseValidate() error {
 	return nil
 }
 
-// check if Cmd is exucutable
-// NumProcess must be if it was 0
-// Umask  must be validated
-// Workdir must be an existing directoy
-// startretries must 0 >= 0
-// Starttime must be 0 >= 0
-// StopSignal must be a Valid signal
-// Stoptime must be 0 >= 0
 
 func (s *ProcessMetadata) DataValidation() error {
 
 	// validating if cmd is executable
+    fmt.Printf("%v\n", s)
 	fi, err := os.Lstat(s.Cmd)
 	if fi.Mode()&0111 == 0 {
 		return fmt.Errorf("%s cmd  '%s' can't be executed", s.ProcessName, s.Cmd)

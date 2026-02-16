@@ -1,32 +1,31 @@
 package handlers
 
 import (
-	"fmt"
 	"github.com/hatim-lahwaouir/taskmaster/loggers"
 	pm "github.com/hatim-lahwaouir/taskmaster/processMetadata"
 	"github.com/hatim-lahwaouir/taskmaster/types"
-	"os"
-	"os/exec"
 	"strings"
 	"sync"
+    "time"
 )
 
 type PHandler struct {
 	Pm  pm.ProcessMetadata
 	Id  int
 	Msg chan types.Msg
+    StartedAt time.Time 
 }
 
 var Loggers types.Loggers = loggers.ProgramLogs
 
-func convert(prcs []pm.ProcessMetadata) map[int]PHandler {
+func convert(prcs []pm.ProcessMetadata) map[int]*PHandler {
 	var (
-		result map[int]PHandler
+		result map[int]*PHandler
 	)
-	result = make(map[int]PHandler)
+	result = make(map[int]*PHandler)
 
 	for i, p := range prcs {
-		result[i] = PHandler{Pm: p, Id: i + 1}
+		result[i + 1] = &PHandler{Pm: p, Id: i + 1 }
 	}
 
 	return result
@@ -34,36 +33,42 @@ func convert(prcs []pm.ProcessMetadata) map[int]PHandler {
 
 func MainHandler(prcsMetadata []pm.ProcessMetadata) {
 	var (
-		prcs       map[int]PHandler
+		prcs       map[int]*PHandler
 		wg         sync.WaitGroup
-		MsgChannel chan types.Msg
 		Cmd        chan string
-        ProcessName map[string]bool
+		Info       chan string
+        ProcessName map[string][]int
 	)
 
-	MsgChannel = make(chan types.Msg, 3)
-    ProcessName = make(map[string]bool)
-	Cmd = make(chan string)
+    ProcessName = make(map[string][]int)
+	Cmd = make(chan string, 2)
+	Info = make(chan string, 20)
 
     // start go routines that will handle processes
 	prcs = convert(prcsMetadata)
 	for id, p := range prcs {
-		p.Msg = MsgChannel
 		Loggers.InfoLogger.Printf("Starting %s:%d\n", p.Pm.ProcessName, id)
 
         // getting processNames
-        ProcessName[strings.ToLower(p.Pm.ProcessName)] = true
+        ProcessName[strings.ToLower(p.Pm.ProcessName)] = append(ProcessName[strings.ToLower(p.Pm.ProcessName)], id)
+        prcs[id].Msg = make(chan types.Msg, 50)
+        
+        
 
 		if p.Pm.Autostart {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
+                
 				ProcessHandler(p)
 			}()
 		}
 	}
     // start go routine for handling interaction with cmd line 
-    go CmdLine(Cmd, ProcessName)
+    go func() {
+		wg.Add(1)
+        CmdLine(Cmd, Info , ProcessName)
+    }()
 
 
     // listening for any input comming from command line
@@ -71,56 +76,53 @@ func MainHandler(prcsMetadata []pm.ProcessMetadata) {
 
         select {
             case cmd := <- Cmd:
-                Loggers.InfoLogger.Printf("Cmd from user %s\n", cmd)
+                handelCmd(cmd,Info, prcs, ProcessName)
+
         }
     }
 	wg.Wait()
 }
 
-func ProcessHandler(prc PHandler) {
-	var (
-		cmd  *exec.Cmd
-		args []string
-		wg   sync.WaitGroup
-		err  error
-	)
-	//setting the cmd
-	args = strings.Split(prc.Pm.Cmd, " ")
-	cmd = exec.Command(args[0], args[1:]...)
 
-	// setting env
-	for k, v := range prc.Pm.Env {
-		cmd.Env = append(cmd.Environ(), fmt.Sprintf("%v=%v", k, v))
-	}
-	// setting the output and stderr
-	cmd.Stdout, err = os.OpenFile(prc.Pm.Stdout, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
-	if err != nil {
-		Loggers.ErrorLogger.Printf("Opening the stdout log file %v\n", err)
-		return
-	}
-	cmd.Stderr, err = os.OpenFile(prc.Pm.Stderr, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
-	if err != nil {
-		Loggers.ErrorLogger.Printf("Opening the stdout log file %v\n", err)
-		return
-	}
+func handelCmd(cmd string, info chan  string , prcs map[int]*PHandler, prscName map[string][]int) {
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		if err := cmd.Start(); err != nil {
-			Loggers.ErrorLogger.Printf("%v\n", err)
-			return
-		}
+    var (
+        arg []string
+        name string
+        todo string
+        result string
+        reply chan string
+    )
+    arg = strings.Split(cmd , " ")
+    todo = strings.ToLower(arg[0])
+    name = strings.ToLower(arg[1])
+    reply = make(chan string, 10)
 
-		if err := cmd.Wait(); err != nil {
-			if exiterr, ok := err.(*exec.ExitError); ok {
-				Loggers.ErrorLogger.Printf("Exit Status: %d", exiterr.ExitCode())
-				return
-			} else {
-				Loggers.ErrorLogger.Printf("%v\n", err)
-				return
-			}
-		}
-	}()
-	wg.Wait()
+
+
+    switch todo {
+        case "start":
+            Loggers.InfoLogger.Printf("%s Targeting \n", todo)
+        case "stop":
+            Loggers.InfoLogger.Printf("%s Targeting \n", todo)
+        case "status":
+            
+            for _, id := range(prscName[name]) {
+                prcs[id].Msg <- types.Msg{Task: types.Task["Status"], RespMsg: reply }
+            }
+
+            for _, _ = range(prscName[name]) {
+                msg := <- reply 
+                result = result + msg
+            }
+            close(reply)
+
+            info <- result
+    }
+
 }
+
+
+
+
+

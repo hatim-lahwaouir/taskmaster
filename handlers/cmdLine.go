@@ -3,7 +3,6 @@ package handlers
 
 import (
     "fmt"
-    "time"
     "strings"
     "bufio"
     "os"
@@ -13,7 +12,7 @@ import (
 
 
 
-func cmdValidation(input string, pnames map[string]bool) error {
+func cmdValidation(input string, pnames map[string][]int) error {
     var (
         arg []string
     )
@@ -36,16 +35,16 @@ func cmdValidation(input string, pnames map[string]bool) error {
     return nil
 }
 
-func CmdLine(cmd chan <- string, pnames map[string]bool) {
+func CmdLine(cmd chan <- string, info  chan string,  pnames map[string][]int) {
 
     var (
         input string
+        resp string
     )
 
 
     scanner := bufio.NewScanner(os.Stdin)
     for ;; {
-        time.Sleep(100 * time.Millisecond)
         fmt.Printf("taskmaster> ")
         scanner.Scan()
         input = scanner.Text() 
@@ -54,5 +53,8 @@ func CmdLine(cmd chan <- string, pnames map[string]bool) {
             continue
         }
         cmd <- input 
+        // after this we need to wait for process to give us info about process running
+        resp = <- info
+        fmt.Printf("taskmaster>\n%s", resp)
     }
 }

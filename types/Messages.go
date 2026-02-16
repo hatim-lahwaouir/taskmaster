@@ -25,14 +25,27 @@ var stateName = map[ProcessStatus]string{
     Starting:     "Starting",
 }
 
+var Task = map[string]ProcessTask{
+    "Start" :      Start,
+    "Stop":        Stop,
+    "Status":      Status,
+}
+
+
+var StatusResp = map[string]ProcessStatus{
+    "Running" :      Running,
+    "Stoped"  :        Stoped,
+    "Starting":      Starting,
+}
+
 func GetProcessStatus(status ProcessStatus) string {
     return stateName[status]
 }
 
 type Msg struct {
-    SenderId int
     Status ProcessStatus // process status returned from process running
     Task   ProcessTask  // task given from main thread to it's children
+    RespMsg chan string
     ExitCode int
 }
 

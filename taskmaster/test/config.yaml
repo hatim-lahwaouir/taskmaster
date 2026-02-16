@@ -3,14 +3,14 @@ programs:
     cmd: "/home/hlahwaou/bin/main"
     numprocs: 5 
     umask: 022 
-    autostart: false 
+    autostart: true 
     autorestart: always 
     workingdir: "/tmp"
     exitcodes: 
       - 1 
       - 0 
     startretries:  3333333
-    starttime: 1111111111 
+    starttime:  1000
     stdout: /tmp/nginx.stdout
     stderr: /tmp/nginx.stderr
     env:
