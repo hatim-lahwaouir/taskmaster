@@ -1,12 +1,10 @@
 package types
 
 import (
-   "log"
-
+	"log"
 )
 
 type Loggers struct {
-        ErrorLogger *log.Logger
-        InfoLogger *log.Logger
+	ErrorLogger *log.Logger
+	InfoLogger  *log.Logger
 }
-

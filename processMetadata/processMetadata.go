@@ -3,11 +3,11 @@ package processMetadata
 import (
 	"errors"
 	"fmt"
-    "strings"
 	"github.com/hatim-lahwaouir/taskmaster/utils"
 	"os"
 	"reflect"
 	"slices"
+	"strings"
 )
 
 type ProcessMetadata struct {
@@ -20,7 +20,7 @@ type ProcessMetadata struct {
 	Autostart    bool           `name:"autostart"`
 	Autorestart  string         `name:"autorestart"`
 	Exitcodes    []interface{}  `name:"exitcodes"`
-	Startretries int64            `name:"startretries"`
+	Startretries int64          `name:"startretries"`
 	Starttime    int64          `name:"starttime"`
 	StopSignal   string         `name:"stopsignal"`
 	Stoptime     int64          `name:"stoptime"`
@@ -38,7 +38,7 @@ func Flatten(pmetadata []ProcessMetadata) []ProcessMetadata {
 
 	var (
 		result []ProcessMetadata
-        i int64
+		i      int64
 	)
 	for _, p := range pmetadata {
 		for i = 0; i < p.NumProcess; i += 1 {
@@ -80,12 +80,12 @@ func SetField(obj interface{}, name string, value interface{}) error {
 
 	val := reflect.ValueOf(value)
 
-    if strings.HasPrefix(structFieldType.String(), "int") &&  strings.HasPrefix(val.Type().String(), "int") {
-	    structFieldValue.SetInt(val.Int())
-        return  nil
-    }
+	if strings.HasPrefix(structFieldType.String(), "int") && strings.HasPrefix(val.Type().String(), "int") {
+		structFieldValue.SetInt(val.Int())
+		return nil
+	}
 
-	if structFieldType != val.Type(){
+	if structFieldType != val.Type() {
 		return fmt.Errorf("Syntax at %s ", name)
 	}
 
@@ -137,11 +137,10 @@ func (s *ProcessMetadata) ParseValidate() error {
 	return nil
 }
 
-
 func (s *ProcessMetadata) DataValidation() error {
 
 	// validating if cmd is executable
-    fmt.Printf("%v\n", s)
+	fmt.Printf("%v\n", s)
 	fi, err := os.Lstat(s.Cmd)
 	if fi.Mode()&0111 == 0 {
 		return fmt.Errorf("%s cmd  '%s' can't be executed", s.ProcessName, s.Cmd)

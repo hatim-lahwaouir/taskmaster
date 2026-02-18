@@ -2,23 +2,35 @@ package handlers
 
 import (
 	"fmt"
+	"github.com/hatim-lahwaouir/taskmaster/types"
 	"os"
 	"os/exec"
 	"strings"
-    "time"
-	"github.com/hatim-lahwaouir/taskmaster/types"
+	"time"
 )
+
+func statusState(dur time.Duration, startTime int64) string {
+	var (
+		t int64
+	)
+
+	t = int64(dur.Seconds())
+
+	if t < startTime {
+		return types.GetProcessStatus(types.Starting)
+	}
+	return types.GetProcessStatus(types.Running)
+}
 
 func ProcessHandler(prc *PHandler) {
 	var (
-		cmd  *exec.Cmd
-		args []string
-		err  error
-        exitCode chan int 
-
+		cmd      *exec.Cmd
+		args     []string
+		err      error
+		exitCode chan int
 	)
 	//setting the cmd
-    exitCode = make(chan int)
+	exitCode = make(chan int)
 	args = strings.Split(prc.Pm.Cmd, " ")
 	cmd = exec.Command(args[0], args[1:]...)
 
@@ -38,8 +50,8 @@ func ProcessHandler(prc *PHandler) {
 		return
 	}
 
-    // the start time
-    prc.StartedAt = time.Now()
+	// the start time
+	prc.StartedAt = time.Now()
 	go func() {
 		if err := cmd.Start(); err != nil {
 			Loggers.ErrorLogger.Printf("%v\n", err)
@@ -49,7 +61,7 @@ func ProcessHandler(prc *PHandler) {
 		if err := cmd.Wait(); err != nil {
 			if exiterr, ok := err.(*exec.ExitError); ok {
 				Loggers.ErrorLogger.Printf("Exit Status: %d", exiterr.ExitCode())
-                exitCode <- exiterr.ExitCode()
+				exitCode <- exiterr.ExitCode()
 				return
 			} else {
 				Loggers.ErrorLogger.Printf("%v\n", err)
@@ -58,18 +70,24 @@ func ProcessHandler(prc *PHandler) {
 		}
 	}()
 
-    for ;; {
-        select  {
-            case exitStatus := <- exitCode:
-				Loggers.ErrorLogger.Printf("Exit Status: %d", exitStatus)
-            case msg := <- prc.Msg: 
-                // we need at switch statement for checking what user is asking for 
+	for {
+		select {
+		case exitStatus := <-exitCode:
+			Loggers.ErrorLogger.Printf("Exit Status: %d", exitStatus)
+		case msg := <-prc.Msg:
+			// we need at switch statement for checking what user is asking for
 
-                switch msg.Task {
-                    case types.Status:
-                         result := fmt.Sprintf("%s:%d  UP  %v\n",prc.Pm.ProcessName, prc.Id, time.Since(prc.StartedAt))
-			             msg.RespMsg <- result 	
-                }
-          }
-    }
+			switch msg.Task {
+			case types.Status:
+				msg.RespMsg <- types.Resp{
+					Id:         prc.Id,
+					PrcsName:   prc.Pm.ProcessName,
+					UpDuration: time.Since(prc.StartedAt),
+					ExitCode:   -1,
+					Status: statusState(time.Since(prc.StartedAt),
+						prc.Pm.Starttime),
+					RestartRetries: prc.RestartRetries}
+			}
+		}
+	}
 }
