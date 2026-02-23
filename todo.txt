@@ -1,6 +1,0 @@
-[x] first parssing the config file
-
-[ ] checking if there is any invalid inputs
-[ ] works with glog in golang 
-[ ] understand how reflection works in golang 
- 

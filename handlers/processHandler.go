@@ -3,9 +3,11 @@ package handlers
 import (
 	"fmt"
 	"github.com/hatim-lahwaouir/taskmaster/types"
+	"github.com/hatim-lahwaouir/taskmaster/utils"
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -27,11 +29,13 @@ func ProcessHandler(prc *PHandler) {
 		cmd      *exec.Cmd
 		args     []string
 		err      error
-		exitCode chan int
+		wg       sync.WaitGroup
+		//exitCode chan int
+        process *os.Process
 	)
 	//setting the cmd
-	exitCode = make(chan int)
-	args = strings.Split(prc.Pm.Cmd, " ")
+	//exitCode = make(chan int)
+	args = strings.Fields(prc.Pm.Cmd)
 	cmd = exec.Command(args[0], args[1:]...)
 
 	// setting env
@@ -52,31 +56,28 @@ func ProcessHandler(prc *PHandler) {
 
 	// the start time
 	prc.StartedAt = time.Now()
+    wg.Add(1)
 	go func() {
 		if err := cmd.Start(); err != nil {
 			Loggers.ErrorLogger.Printf("%v\n", err)
 			return
 		}
+        process = cmd.Process
 
 		if err := cmd.Wait(); err != nil {
-			if exiterr, ok := err.(*exec.ExitError); ok {
-				Loggers.ErrorLogger.Printf("Exit Status: %d", exiterr.ExitCode())
-				exitCode <- exiterr.ExitCode()
+			//if exiterr, ok := err.(*exec.ExitError); ok {
+				//Loggers.ErrorLogger.Printf("Exit Status: %d", exiterr.ExitCode())
+				//exitCode <- exiterr.ExitCode()
 				return
-			} else {
+			//} else {
 				Loggers.ErrorLogger.Printf("%v\n", err)
 				return
-			}
 		}
 	}()
 
 	for {
 		select {
-		case exitStatus := <-exitCode:
-			Loggers.ErrorLogger.Printf("Exit Status: %d", exitStatus)
 		case msg := <-prc.Msg:
-			// we need at switch statement for checking what user is asking for
-
 			switch msg.Task {
 			case types.Status:
 				msg.RespMsg <- types.Resp{
@@ -87,6 +88,12 @@ func ProcessHandler(prc *PHandler) {
 					Status: statusState(time.Since(prc.StartedAt),
 						prc.Pm.Starttime),
 					RestartRetries: prc.RestartRetries}
+			case types.Stop:
+                sig, _ := utils.GetSignal(prc.Pm.StopSignal)
+                process.Signal(sig)
+
+                wg.Wait()
+                return
 			}
 		}
 	}

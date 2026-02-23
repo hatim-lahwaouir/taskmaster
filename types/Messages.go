@@ -13,6 +13,7 @@ const (
 	Reload
 	Wait
 	Status
+    IsRunning
 )
 
 const (
@@ -31,6 +32,7 @@ var Task = map[string]ProcessTask{
 	"Start":  Start,
 	"Stop":   Stop,
 	"Status": Status,
+	"IsRunning": IsRunning,
 }
 
 var StatusResp = map[string]ProcessStatus{

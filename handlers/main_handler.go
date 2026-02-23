@@ -3,10 +3,10 @@ package handlers
 import (
 	"fmt"
 	"github.com/hatim-lahwaouir/taskmaster/loggers"
-	"github.com/hatim-lahwaouir/taskmaster/utils"
 	pm "github.com/hatim-lahwaouir/taskmaster/processMetadata"
-    "strconv"
 	"github.com/hatim-lahwaouir/taskmaster/types"
+	"github.com/hatim-lahwaouir/taskmaster/utils"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -18,6 +18,7 @@ type PHandler struct {
 	Msg            chan types.Req
 	StartedAt      time.Time
 	RestartRetries int64
+	Mutex          sync.Mutex
 }
 
 var Loggers types.Loggers = loggers.ProgramLogs
@@ -45,7 +46,7 @@ func MainHandler(prcsMetadata []pm.ProcessMetadata) {
 	)
 
 	ProcessName = make(map[string][]int)
-	Cmd = make(chan string, 2)
+	Cmd = make(chan string, 5)
 	Info = make(chan string, 20)
 
 	// start go routines that will handle processes
@@ -55,7 +56,7 @@ func MainHandler(prcsMetadata []pm.ProcessMetadata) {
 
 		// getting processNames
 		ProcessName[strings.ToLower(p.Pm.ProcessName)] = append(ProcessName[strings.ToLower(p.Pm.ProcessName)], id)
-		prcs[id].Msg = make(chan types.Req, 50)
+		prcs[id].Msg = make(chan types.Req, 3)
 
 		if p.Pm.Autostart {
 			wg.Add(1)
@@ -77,62 +78,214 @@ func MainHandler(prcsMetadata []pm.ProcessMetadata) {
 
 		select {
 		case cmd := <-Cmd:
-			handelCmd(cmd, Info, prcs, ProcessName)
+			handelCmd(cmd, Info, prcs, ProcessName, &wg)
 
 		}
 	}
 	wg.Wait()
 }
 
-func getHeader() string {
-	return fmt.Sprintf("%-20s %-10s %-25s %-25s\n", 
-    "ProcessName:Id",
-    "Status",
-    "UpDuration",
-    "StartRetries")
+func getHeaderStatus() string {
+	return fmt.Sprintf("%-20s %-10s %-25s %-25s\n",
+		"ProcessName:Id",
+		"Status",
+		"UpDuration",
+		"StartRetries")
 }
 
-func handleResp(msg types.Resp, prcs *PHandler) string {
-    
-	return fmt.Sprintf("%-20s %-10s %-25v %-25s\n", 
-     utils.Truncate(msg.PrcsName + ":" + strconv.Itoa(msg.Id), 17), 
-     msg.Status, 
-     msg.UpDuration.Round(time.Second),
-     utils.Truncate(strconv.FormatInt(msg.RestartRetries, 10) + "/" + strconv.FormatInt(prcs.Pm.Startretries, 10), 25 - 3) )
+func getHeaderStart() string {
+	return fmt.Sprintf("%-20s %-20s\n",
+		"ProcessName:Id",
+		"Status",
+	)
 }
 
-func handelCmd(cmd string, info chan string, prcs map[int]*PHandler, prscName map[string][]int) {
+func getHeaderStop() string {
+	return fmt.Sprintf("%-20s %-20s\n",
+		"ProcessName:Id",
+		"Status",
+	)
+}
+
+
+func handleRespStatus(msg types.Resp, prcs *PHandler) string {
+
+    if msg.Status == "Running" ||   msg.Status == "Starting" { 
+        return fmt.Sprintf("%-20s %-10s %-25v %-25s\n",
+            utils.Truncate(msg.PrcsName+":"+strconv.Itoa(msg.Id), 17),
+            msg.Status,
+            msg.UpDuration.Round(time.Second),
+            utils.Truncate(strconv.FormatInt(msg.RestartRetries, 10)+"/"+strconv.FormatInt(prcs.Pm.Startretries, 10), 25-3))
+    }
+
+
+    return fmt.Sprintf("%-20s %-10s %-25v %-25s\n",
+            utils.Truncate(msg.PrcsName+":"+strconv.Itoa(msg.Id), 17),
+            msg.Status,
+            "NA",
+            "NA")
+}
+
+
+
+func handleRespStart(prcs *PHandler) string {
+	var (
+		status string
+	)
+	prcs.Mutex.Lock()
+	status = "running"
+	if prcs.StartedAt.IsZero() {
+		status = "starting"
+	}
+
+	prcs.Mutex.Unlock()
+	return fmt.Sprintf("%-20s %s\n",
+		utils.Truncate(prcs.Pm.ProcessName+":"+strconv.Itoa(prcs.Id), 17), status)
+}
+
+
+func handleRespStop(prcs *PHandler, running bool) string {
+    if running {
+        return fmt.Sprintf("%-20s %s\n",
+		        utils.Truncate(prcs.Pm.ProcessName+":"+strconv.Itoa(prcs.Id), 17), "stoping process")
+    }
+        
+
+   return fmt.Sprintf("%-20s %s\n",
+		        utils.Truncate(prcs.Pm.ProcessName+":"+strconv.Itoa(prcs.Id), 17), "already stoped")
+
+}
+
+func startingProcess(wg *sync.WaitGroup, p *PHandler) {
+    p.Mutex.Lock()
+	if  p.StartedAt.IsZero() == false {
+
+	       p.Mutex.Unlock()
+           return
+	}
+	p.Mutex.Unlock()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		p.Msg = make(chan types.Req, 3)
+		ProcessHandler(p)
+	}()
+
+}
+
+
+
+
+func handlStart(info chan string, prcs map[int]*PHandler, prscName map[string][]int, name string, wg *sync.WaitGroup) {
+    var (
+        result string
+    )
+    // check if process already running
+    result = getHeaderStart()
+    for _, id := range prscName[name] {
+        result = result + handleRespStart(prcs[id])
+    }
+    // we need to start process if they never started
+    for _, id := range prscName[name] {
+        startingProcess(wg,prcs[id])
+    }
+    info <- result
+}
+
+
+func handlStatus(info chan string, prcs map[int]*PHandler, prscName map[string][]int, name string) {
+    var (
+        result string
+		resp   chan types.Resp
+        prunning bool
+    )
+    resp = make(chan types.Resp, 10)
+    defer close(resp)
+
+
+    result = getHeaderStatus()
+    for _, id := range prscName[name] {
+        prunning = true
+        prcs[id].Mutex.Lock()
+	    if prcs[id].StartedAt.IsZero() {
+            prunning = false
+	    }
+        prcs[id].Mutex.Unlock()
+
+
+
+        if ! prunning  {
+            result = result + handleRespStatus(types.Resp{Id: prcs[id].Id, PrcsName: prcs[id].Pm.ProcessName,
+            Status:	types.GetProcessStatus(types.Stoped)}, prcs[id])
+        } else {
+            prcs[id].Msg <- types.Req{Task: types.Task["Status"], RespMsg: resp}
+            result = result + handleRespStatus(<- resp, prcs[id])
+        }
+        
+    }
+    info <- result
+
+}
+
+
+func handlStop(info chan string, prcs map[int]*PHandler, prscName map[string][]int, name string) { 
+    var (
+        result string
+        prunning bool
+    )
+
+    for _, id := range prscName[name] {
+        prunning = true
+        prcs[id].Mutex.Lock()
+	    if prcs[id].StartedAt.IsZero() {
+            prunning = false
+	    }
+        prcs[id].Mutex.Unlock()
+
+
+
+        if ! prunning  {
+            result = result + handleRespStop(prcs[id], prunning)
+        } else {
+            prcs[id].Msg <- types.Req{Task: types.Task["Stop"]}
+            result = result + handleRespStop(prcs[id], prunning)
+        }
+    }
+
+
+    info <- result
+    for _, id := range prscName[name] {
+        prcs[id].Mutex.Lock()
+        prcs[id].StartedAt = time.Date(0001, 1, 1, 00, 00, 00, 00, time.UTC)
+        prcs[id].Mutex.Unlock()
+
+        close(prcs[id].Msg) 
+    }
+}
+
+
+
+
+
+func handelCmd(cmd string, info chan string, prcs map[int]*PHandler, prscName map[string][]int, wg *sync.WaitGroup) {
 
 	var (
 		arg    []string
 		name   string
 		todo   string
-		result string
 	)
-	arg = strings.Split(cmd, " ")
+	arg = strings.Fields(cmd )
 	todo = strings.ToLower(arg[0])
 	name = strings.ToLower(arg[1])
 
 	switch todo {
 	case "start":
-		Loggers.InfoLogger.Printf("%s Targeting \n", todo)
+        handlStart(info, prcs, prscName, name, wg)
 	case "stop":
-		Loggers.InfoLogger.Printf("%s Targeting \n", todo)
+        handlStop(info, prcs, prscName, name)
 	case "status":
-		var (
-			resp chan types.Resp
-		)
-		resp = make(chan types.Resp, 10)
-		for _, id := range prscName[name] {
-			prcs[id].Msg <- types.Req{Task: types.Task["Status"], RespMsg: resp}
-		}
-
-		result = getHeader()
-		for _, id := range prscName[name] {
-			msg := <-resp
-			result = result + handleResp(msg, prcs[id])
-		}
-		info <- result
+        handlStatus(info, prcs, prscName, name)
 	}
-
 }

@@ -13,7 +13,7 @@ func cmdValidation(input string, pnames map[string][]int) error {
 		arg []string
 	)
 
-	arg = strings.Split(input, " ")
+	arg = strings.Fields(input)
 
 	if len(arg) != 2 {
 		return fmt.Errorf("usage: 'cmd:[start:status:stop] [process Name]'")
