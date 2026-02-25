@@ -110,20 +110,27 @@ func getHeaderStop() string {
 
 func handleRespStatus(msg types.Resp, prcs *PHandler) string {
 
+    var (
+        ret string
+    )
+
     if msg.Status == "Running" ||   msg.Status == "Starting" { 
-        return fmt.Sprintf("%-20s %-10s %-25v %-25s\n",
+        prcs.Mutex.Lock()
+        ret =  fmt.Sprintf("%-20s %-10s %-25v %-25s\n",
             utils.Truncate(msg.PrcsName+":"+strconv.Itoa(msg.Id), 17),
             msg.Status,
             msg.UpDuration.Round(time.Second),
             utils.Truncate(strconv.FormatInt(msg.RestartRetries, 10)+"/"+strconv.FormatInt(prcs.Pm.Startretries, 10), 25-3))
-    }
-
-
-    return fmt.Sprintf("%-20s %-10s %-25v %-25s\n",
+        prcs.Mutex.Unlock()
+    } else { 
+        ret = fmt.Sprintf("%-20s %-10s %-25v %-25s\n",
             utils.Truncate(msg.PrcsName+":"+strconv.Itoa(msg.Id), 17),
             msg.Status,
             "NA",
             "NA")
+    }
+
+    return ret
 }
 
 
@@ -163,6 +170,8 @@ func startingProcess(wg *sync.WaitGroup, p *PHandler) {
 	       p.Mutex.Unlock()
            return
 	}
+
+    p.RestartRetries = 0 
 	p.Mutex.Unlock()
 
 	wg.Add(1)

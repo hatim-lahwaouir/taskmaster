@@ -31,7 +31,8 @@ type ProcessMetadata struct {
 
 func New() ProcessMetadata {
 	// set some default value
-	return ProcessMetadata{NumProcess: 1, Workdir: ".", Stdout: os.DevNull, Stderr: os.DevNull, Startretries: 1, StopSignal: "KILL"}
+	return ProcessMetadata{NumProcess: 1, Workdir: ".", Stdout: os.DevNull, Stderr: os.DevNull, Startretries: 1, StopSignal: "KILL",
+            Autorestart: "never"}
 }
 
 func Flatten(pmetadata []ProcessMetadata) []ProcessMetadata {

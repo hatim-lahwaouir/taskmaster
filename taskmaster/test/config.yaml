@@ -1,21 +1,4 @@
 programs:
-  MyProgram:
-    cmd: "/home/hlahwaou/bin/main"
-    numprocs: 5 
-    umask: 022 
-    autostart: true 
-    autorestart: always 
-    workingdir: "/tmp"
-    exitcodes: 
-      - 1 
-      - 0 
-    starttime:  1000
-    stdout: /tmp/nginx.stdout
-    stderr: /tmp/nginx.stderr
-    env:
-      STARTED_BY: taskmaster
-      STAED_BY: 1.235123,1235
-      STAED_11BY: 1+e10
   main:
     cmd: "/home/hlahwaou/bin/main"
     numprocs: 3 
@@ -23,6 +6,7 @@ programs:
     autostart: false 
     workingdir: "/tmp"
     autorestart: always 
+    startretries: 3
     starttime:  1000
     stdout: /tmp/nginx.stdout
     stderr: /tmp/nginx.stderr
