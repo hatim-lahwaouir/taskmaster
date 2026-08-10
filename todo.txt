@@ -1,0 +1,25 @@
+[x] First start by parssing YML file
+[ ] how to store the state of each process ?
+[ ] how to manage the state of all processes in your taskmaster ? 
+
+
+[ ] Program must be able to reload the config file and don't affect process that it's config didn't change 
+
+
+
+
+[ ] Shell must have these three features (status of all program | [stop | start |restart ] program, realod the config file , shutdown )
+[ ] + Config file must contain 
+    |- CMD
+    |- number of processes 
+    |- start this program at lanch or not 
+    |- when to restart the program [always, never, unxpected exits]
+    |- return code that represent unxpected exists
+    |- duration for program to be running to consider successfully started
+    |- restart retries before aborting
+    |- signal to use to stop a program
+    |- how much to wait before killing the program 
+    |- Options to redirect stdout,stderr                         Optional argument
+    |- env variables                                             Optional argument               
+    |- working dir 
+    |- Umask  
