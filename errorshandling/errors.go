@@ -1,6 +1,9 @@
-package main
+package errorshandling
 
-import "fmt"
+import (
+	"fmt"
+	"os"
+)
 
 
 type Error string
@@ -16,8 +19,9 @@ const (
 	ErrDataWasntProvided       Error = "resource wasn't provided"
 	ErrInternal       Error = "Internal error with ther resource "
 	ErrInvalidData       Error = "Invalid data"
-
-
+	ErrCreatingTheProcess       Error = "Can't setup the porcess"
+	ErrTaskMaster       Error = "taskmaster error"
+	ErrInvalidCMD     Error = "invalid cmd"
 )
 
 
@@ -32,5 +36,10 @@ func NewErrorReporter(err Error, v any) *ErrorReporter{
 
 
 func (e *ErrorReporter) String() string {
-	return fmt.Sprintf("%s : %v", e.err, e.v)
+	return fmt.Sprintf("taskmaster> %s : %v", e.err, e.v)
+}
+
+
+func (e *ErrorReporter) Report(){
+	fmt.Fprintf(os.Stderr, "%v\n", e)
 }

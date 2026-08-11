@@ -1,12 +1,14 @@
-package main
+package parser
 
 import (
 	"errors"
 	"fmt"
 	"os"
 	"strings"
+	"syscall"
 
 	"github.com/go-playground/validator/v10"
+	"github.com/hatim-lahwaouir/taskmaster/errorshandling"
 	"gopkg.in/yaml.v3"
 )
 
@@ -32,14 +34,15 @@ type Processes struct {
 	NumProcs int 						`yaml:"numprocs" validate:"required,min=1"`
 	Umask int16 						`yaml:"umask" validate:"required,min=0,max=511"`
 	WorkingDIr string 					`yaml:"workingdir" validate:"required"`
-	AutoStart bool 						`yaml:"autostart" validate:"required"`
+	AutoStart bool 						`yaml:"autostart"`
 	AutoRestart string 					`yaml:"autorestart" validate:"required,oneof=unexpected always never"`
 	StartRetries int 					`yaml:"startretries" validate:"required,min=0"`
 	StartTime int64  					`yaml:"starttime" validate:"required,min=0"`
 	Stdout string 						`yaml:"stdout"`
 	Stderr string 						`yaml:"stderr"`
 	ExitCodes any 						`yaml:"exitcodes"`
-	Env map[string]string							`yaml:"env"`
+	Env map[string]string				`yaml:"env"`
+	Stopsignal string    				`yaml:"stopsignal" validate:"required"` 
 }
 
 var ProcessParsingErrors  = map[string]string{
@@ -51,14 +54,43 @@ var ProcessParsingErrors  = map[string]string{
 	"exitcodes" : "must be provided with autorestart set to unxpected",
 }
 
+
+var validSignals = map[string]os.Signal{
+    "HUP":    syscall.SIGHUP,
+    "INT":    syscall.SIGINT,
+    "QUIT":   syscall.SIGQUIT,
+    "ILL":    syscall.SIGILL,
+    "TRAP":   syscall.SIGTRAP,
+    "ABRT":   syscall.SIGABRT,
+    "FPE":    syscall.SIGFPE,
+    "KILL":   syscall.SIGKILL,
+    "SEGV":   syscall.SIGSEGV,
+    "PIPE":   syscall.SIGPIPE,
+    "ALRM":   syscall.SIGALRM,
+    "TERM":   syscall.SIGTERM,
+    "USR1":   syscall.SIGUSR1,
+    "USR2":   syscall.SIGUSR2,
+    "CHLD":   syscall.SIGCHLD,
+    "CONT":   syscall.SIGCONT,
+    "STOP":   syscall.SIGSTOP,
+    "TSTP":   syscall.SIGTSTP,
+    "TTIN":   syscall.SIGTTIN,
+    "TTOU":   syscall.SIGTTOU,
+}
+
+
+func (p * Processes) GetSingal() os.Signal{
+	return validSignals[p.Stopsignal]
+}
+
+
 type Config struct {
     Programs map[string]*Processes `yaml:"programs"`
 }
 
 
 
-
-func (yml *YMLParser) validateConfig(config *Config) *ErrorReporter {
+func (yml *YMLParser) validateConfig(config *Config) *errorshandling.ErrorReporter {
     
 	
 
@@ -79,11 +111,11 @@ func (yml *YMLParser) validateConfig(config *Config) *ErrorReporter {
 			if errors.As(err, &validateErrs) {
 				for _, e := range validateErrs {
 					key := strings.ToLower(e.Field())
-					
+					fmt.Println(e)
 					if err, ok := ProcessParsingErrors[key]; ok {
-						return NewErrorReporter(ErrInvalidData, fmt.Sprintf("%s %s at %s", key, err, k))
+						return errorshandling.NewErrorReporter(errorshandling.ErrInvalidData, fmt.Sprintf("%s %s at %s", key, err, k))
 					}else{
-						return NewErrorReporter(ErrInvalidData, fmt.Sprintf("%s at %s", key, k))
+						return errorshandling.NewErrorReporter(errorshandling.ErrInvalidData, fmt.Sprintf("%s at %s", key, k))
 					}
 				
 				}
@@ -91,9 +123,15 @@ func (yml *YMLParser) validateConfig(config *Config) *ErrorReporter {
 		}
 		
 
+		// validate autorestart
 		if v.AutoRestart == "unexpected" && v.ExitCodes == nil {
-			return NewErrorReporter(ErrInvalidData, fmt.Sprintf("exitcodes %s at %s", ProcessParsingErrors["exitcodes"], k))
+			return errorshandling.NewErrorReporter(errorshandling.ErrInvalidData, fmt.Sprintf("exitcodes %s at %s", ProcessParsingErrors["exitcodes"], k))
 		}
+
+		// validate signal 
+		if _, exists := validSignals[v.Stopsignal]; !exists {
+			return errorshandling.NewErrorReporter(errorshandling.ErrInvalidData, fmt.Sprintf("stopsignal at %s", k))
+	    }
 		
 	}
 	return nil
@@ -102,7 +140,7 @@ func (yml *YMLParser) validateConfig(config *Config) *ErrorReporter {
 
 
 
-func (yml *YMLParser) Start() ([]*Processes, *ErrorReporter) {
+func (yml *YMLParser) Start() ([]*Processes, * errorshandling.ErrorReporter) {
 	var (
 		config Config
 		processes []*Processes
@@ -112,15 +150,15 @@ func (yml *YMLParser) Start() ([]*Processes, *ErrorReporter) {
 
 
 	if err != nil {
-		return nil, NewErrorReporter(ErrInternal, err.Error())
+		return nil, errorshandling.NewErrorReporter(errorshandling.ErrInternal, err.Error())
 	}
 
 	if err := yaml.Unmarshal(data, &config); err != nil {
-		return nil, NewErrorReporter(ErrDataWasntProvided, err.Error())
+		return nil, errorshandling.NewErrorReporter(errorshandling.ErrDataWasntProvided, err.Error())
 	}
 
 	if len(config.Programs) == 0{
-		return nil, NewErrorReporter(ErrDataWasntProvided, "Program argument in yml file")
+		return nil, errorshandling.NewErrorReporter(errorshandling.ErrDataWasntProvided, "Program argument in yml file")
 	}
 
 

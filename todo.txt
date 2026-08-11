@@ -23,3 +23,8 @@
     |- env variables                                             Optional argument               
     |- working dir 
     |- Umask  
+
+
+[x] Umask for process
+[x] Set standout and stderr for process 
+[ ]

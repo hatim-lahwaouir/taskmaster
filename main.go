@@ -1,9 +1,11 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"os"
+
+	"github.com/hatim-lahwaouir/taskmaster/parser"
+	"github.com/hatim-lahwaouir/taskmaster/supervisor"
 )
 
 
@@ -13,7 +15,7 @@ func main(){
 		log.Fatal("Invalid args")		
 	}
 
-	parser := NewYmlParser(os.Args[1])
+	parser := parser.NewYmlParser(os.Args[1])
 
 
 	programs, err := parser.Start()
@@ -21,7 +23,10 @@ func main(){
 		log.Fatal(err)
 	}
 
-	for i := range(programs){
-		fmt.Println(programs[i])
-	}
+	s := supervisor.NewMasterSupervisor(programs)
+
+
+	s.InitProcesses()
+	s.Shell()
+	s.Wait()
 }
