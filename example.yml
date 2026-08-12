@@ -1,16 +1,16 @@
 programs:
-  nginxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx:
+  nginx:
     cmd: "/home/hlahwaou/bin/main"
     numprocs: 5
     umask: 012
     workingdir: /tmp
-    autostart: true
+    autostart: false
     autorestart: unexpected
     exitcodes:
       - 0
       - 2
     startretries: 1
-    starttime: 10
+    starttime: 15
     stopsignal: TERM
     stoptime: 10
     stdout: /tmp/main.stdout
@@ -25,10 +25,8 @@ programs:
     workingdir: /tmp
     autostart: false
     autorestart: unexpected
-    exitcodes:
-      - 0
-      - 2
-    startretries: 3
+    exitcodes: 10 
+    startretries: 1
     starttime: 5
     stopsignal: TERM
     stoptime: 10

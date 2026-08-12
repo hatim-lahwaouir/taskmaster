@@ -27,4 +27,5 @@
 
 [x] Umask for process
 [x] Set standout and stderr for process 
-[ ]
+[x] haddnel stop, staus and start cmd
+[ ] handle stoping program with signal 

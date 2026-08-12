@@ -40,7 +40,7 @@ type Processes struct {
 	StartTime int64  					`yaml:"starttime" validate:"required,min=0"`
 	Stdout string 						`yaml:"stdout"`
 	Stderr string 						`yaml:"stderr"`
-	ExitCodes any 						`yaml:"exitcodes"`
+	ExitCodes any 						`yaml:"exitcodes" validate:"required"`
 	Env map[string]string				`yaml:"env"`
 	Stopsignal string    				`yaml:"stopsignal" validate:"required"` 
 }
@@ -51,7 +51,7 @@ var ProcessParsingErrors  = map[string]string{
 	"autorestart" : "required,  oneof=unexpected always never",
 	"startretries": "required,  must be positif number",
 	"starttime" : "required, must be positif number",
-	"exitcodes" : "must be provided with autorestart set to unxpected",
+	"exitcodes" : "must be provided with autorestart set to unxpected, and must be between 0-255",
 }
 
 
@@ -123,11 +123,22 @@ func (yml *YMLParser) validateConfig(config *Config) *errorshandling.ErrorReport
 		}
 		
 
-		// validate autorestart
-		if v.AutoRestart == "unexpected" && v.ExitCodes == nil {
+		// validate Env 
+		if exitcodes, ok := v.ExitCodes.([]any); ok{
+			for i := range exitcodes{
+				nbr, ok := exitcodes[i].(int)
+
+				if !ok  || nbr < 0 || nbr > 255{
+					return errorshandling.NewErrorReporter(errorshandling.ErrInvalidData, fmt.Sprintf("exitcodes %s at %s", ProcessParsingErrors["exitcodes"], k))
+				}
+			}
+		} else if exitcode, ok := v.ExitCodes.(int); ok{
+			if  exitcode < 0 || exitcode > 255{
+					return errorshandling.NewErrorReporter(errorshandling.ErrInvalidData, fmt.Sprintf("exitcodes %s at %s", ProcessParsingErrors["exitcodes"], k))
+				}
+		} else {
 			return errorshandling.NewErrorReporter(errorshandling.ErrInvalidData, fmt.Sprintf("exitcodes %s at %s", ProcessParsingErrors["exitcodes"], k))
 		}
-
 		// validate signal 
 		if _, exists := validSignals[v.Stopsignal]; !exists {
 			return errorshandling.NewErrorReporter(errorshandling.ErrInvalidData, fmt.Sprintf("stopsignal at %s", k))

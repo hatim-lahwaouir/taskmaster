@@ -1,7 +1,6 @@
 package supervisor
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -19,7 +18,8 @@ import (
 
 type ProcesseSupervisor struct {
 	Name string
-	Cmd string 											
+	Cmd string 		
+	ExecCmd *exec.Cmd									
 	Umask string 					
 	WorkingDIr string 				
 	AutoStart bool 					
@@ -27,7 +27,9 @@ type ProcesseSupervisor struct {
 	StartRetries int 					
 	StartTime int64  					
 	Stdout string 						
-	Stderr string 						
+	Stderr string
+	stdoutFile *os.File
+    stderrFile *os.File			
 	ExitCodes map[int]bool							
 	Env map[string]string
 	StopSingal os.Signal
@@ -36,8 +38,6 @@ type ProcesseSupervisor struct {
 	StartedAt time.Time
 
 	// context for canceling the cmd
-	Ctx context.Context
-	cancel context.CancelFunc
 	
 	// started 
 
@@ -48,13 +48,17 @@ type ProcesseSupervisor struct {
 
 	// waiting for clearence
 	wg *sync.WaitGroup
+
+	// mutext 
+
+	mu sync.RWMutex
 }
 
 
 
 func NewProcesseSupervisor(p *parser.Processes, wg *sync.WaitGroup) *ProcesseSupervisor {
 
-	ctx, cancel := context.WithCancel(context.Background())
+
 	exitCodes := make(map[int]bool)
 
 
@@ -81,8 +85,6 @@ func NewProcesseSupervisor(p *parser.Processes, wg *sync.WaitGroup) *ProcesseSup
 		Stderr:       p.Stderr,
 		ExitCodes:    exitCodes, 
 		Env:          p.Env,
-		Ctx:          ctx,
-		cancel:       cancel,
 		StopSingal: p.GetSingal(),
 		wg: wg,
 	}
@@ -92,24 +94,28 @@ func NewProcesseSupervisor(p *parser.Processes, wg *sync.WaitGroup) *ProcesseSup
 }
 
 func (p *ProcesseSupervisor) Status(w *tabwriter.Writer) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 	if p.Stoped.Load() {
-		fmt.Fprintf(w," %s\t| -1\t| stoped\t\n", p.Name)
+		fmt.Fprintf(w," %s\t| -1\t| stoped\t| -1\t\n", p.Name)
 		return
 	}
 	duration := time.Since(p.StartedAt).Round(time.Millisecond)
 
 	if p.StartedAt.Add(time.Duration(p.StartTime * int64(time.Second))).Compare(time.Now()) > 0{
-		fmt.Fprintf(w," %s\t| %s\t| started\t\n", p.Name, duration)
+		fmt.Fprintf(w," %s\t| %s\t| started\t| %d\t\n", p.Name, duration, p.ExecCmd.Process.Pid)
 		return 
 	}
 
-	fmt.Fprintf(w," %s\t| %s\t| running\t\n", p.Name, duration)
+	fmt.Fprintf(w," %s\t| %s\t| running\t| %d\t\n", p.Name, duration, p.ExecCmd.Process.Pid)
 }
 
 func (p *ProcesseSupervisor) Stop() {
-	p.cancel()
 	p.Stoped.Store(true)
-
+	
+	p.mu.Lock()
+	p.ExecCmd.Process.Kill()
+	p.mu.Unlock()
 }
 
 
@@ -117,56 +123,138 @@ func (p *ProcesseSupervisor) Stop() {
 // we need to start processes if autostart was set to true 
 
 
+func (p *ProcesseSupervisor) InitCmd() *errorshandling.ErrorReporter {
+	var (
+				err error
+	)		
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	
+	fullCommand := fmt.Sprintf("umask %s && %s", p.Umask, p.Cmd)
+
+
+	p.ExecCmd = exec.Command( "bash", "-c", fullCommand)
+	
+	
+	// set working directory 
+	p.ExecCmd.Dir = p.WorkingDIr
+
+	// f, err := os.OpenFile("lines", os.O_APPEND|os.O_WRONLY, 0644)
+
+	if p.Stdout != ""{
+		p.stdoutFile, err = os.OpenFile(p.Stdout, os.O_WRONLY | os.O_TRUNC | os.O_CREATE, 0644)
+		if err != nil {
+			return errorshandling.NewErrorReporter(errorshandling.ErrCreatingTheProcess, err.Error() + " at " + p.Name)
+		}
+		p.ExecCmd.Stdout = p.stdoutFile
+	}
+
+	if p.Stderr != ""{
+		p.stderrFile, err = os.OpenFile(p.Stderr, os.O_WRONLY | os.O_TRUNC| os.O_CREATE, 0644)
+		if err != nil {
+			p.stdoutFile.Close()
+			return errorshandling.NewErrorReporter(errorshandling.ErrCreatingTheProcess, err.Error() + " at " + p.Name)
+		}
+		p.ExecCmd.Stderr = p.stderrFile
+	}
+
+
+	for k, val := range p.Env {
+		p.ExecCmd.Env = append(p.ExecCmd.Environ(), fmt.Sprintf("%s=%s", k, val))
+	}
+
+
+	return nil
+}
+
+
+func (p *ProcesseSupervisor) CleanResources(){
+
+	p.stderrFile.Close()
+	p.stdoutFile.Close()
+}
+
+func (p *ProcesseSupervisor) startCmd() error {
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if err := p.ExecCmd.Start(); err != nil {
+
+				return err
+	}
+	return nil
+}
+
+
+
+func (p *ProcesseSupervisor) exitCode() int {
+	err := p.ExecCmd.Wait()
+	fmt.Printf("Process exited. Result: %v\n", err)
+
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+
+	if p.ExecCmd.ProcessState != nil {
+		return p.ExecCmd.ProcessState.ExitCode()
+	}
+
+	return -1
+}
+
+
+
+func (p *ProcesseSupervisor) MustStop(exitCode int ) bool {
+	if p.AutoRestart == "always"{
+		return true
+	}
+
+
+	if p.AutoRestart == "unexpected"{
+		_, ok := p.ExitCodes[exitCode]
+		return !ok
+	}
+
+
+	return true
+}
+
+
 func (p *ProcesseSupervisor) Start() {
 	defer p.wg.Done()
 	p.Stoped.Store(false)
 	defer p.Stoped.Store(true)
-	p.StartedAt = time.Now()
 
 	for i := 0 ; i < p.StartRetries; i++ {
-			fullCommand := fmt.Sprintf("umask %s && %s", p.Umask, p.Cmd)
+			p.StartedAt = time.Now()
+			if p.Stoped.Load() == true{
+				break
+			}
+			if err := p.InitCmd(); err != nil {
+				err.Report()
+				continue
+			}
 
+			if p.startCmd() != nil {
+				p.CleanResources()
+				continue
+			}
+	
 
-			cmd := exec.CommandContext(p.Ctx, "bash", "-c", fullCommand)
-			
-			
-			// set working directory 
-			cmd.Dir = p.WorkingDIr
-
-			// f, err := os.OpenFile("lines", os.O_APPEND|os.O_WRONLY, 0644)
-
-			if p.Stdout != ""{
-				stdout, err := os.OpenFile(p.Stdout, os.O_WRONLY | os.O_TRUNC | os.O_CREATE, 0644)
-				if err != nil {
-					errorshandling.NewErrorReporter(errorshandling.ErrCreatingTheProcess, err.Error() + " at " + p.Name).Report()
-					continue
+			exitCode := p.exitCode()
+			// check if it need to be restarted 
+			p.CleanResources()
+			if i == p.StartRetries - 1 {
+				if p.MustStop(exitCode){
+					break
+				}else {
+					i = -1
 				}
-				cmd.Stdout = stdout
-			}
-
-			if p.Stderr != ""{
-				stdErr, err := os.OpenFile(p.Stderr, os.O_WRONLY | os.O_TRUNC| os.O_CREATE, 0644)
-				if err != nil {
-					errorshandling.NewErrorReporter(errorshandling.ErrCreatingTheProcess, err.Error() + " at " + p.Name).Report()
-					continue
-				}
-				cmd.Stderr = stdErr
-			}
-
-
-			// setting stdout 
-			
-
-			// setting env 
-			for k, val := range p.Env {
-				cmd.Env = append(cmd.Environ(), fmt.Sprintf("%s=%s", k, val))
-			}
-
-			
-			if err := cmd.Run(); err != nil {
-				fmt.Println("err command stoped", err)
 			}
 	}
+	p.Stoped.Store(true)
 
 }
 

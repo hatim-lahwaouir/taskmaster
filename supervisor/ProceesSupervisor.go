@@ -54,6 +54,10 @@ func (m *MasterSupervisor) Print() {
 }
 
 
+func (m *MasterSupervisor) logs(v any) {
+	fmt.Printf("taskmaster> %v\n", v)
+}
+
 
 func (m *MasterSupervisor) InitProcesses() {
 
@@ -74,22 +78,38 @@ func (m *MasterSupervisor) Start(processName string) {
 	for j := range(m.process[processName]){
 		p := m.process[processName][j]
 		if p.Stoped.Load() == true {
-			fmt.Println("starting", processName)
+			m.logs("starting " + processName)
 			m.wg.Add(1)
 			go m.process[processName][j].Start()
 		}else {
-			fmt.Println("Already started", processName)
-
+			m.logs("already started " + processName)
 		}
 	}
 }
+
+
+func (m *MasterSupervisor) Stop(processName string) {
+
+	for j := range(m.process[processName]){
+		p := m.process[processName][j]
+		if p.Stoped.Load() == false {
+			m.logs("stoping " + processName)
+			m.process[processName][j].Stop()
+		}else {
+
+			m.logs("Already stoped" + processName)
+			// fmt.Println(, processName)
+		}
+	}
+}
+
 
 func (m *MasterSupervisor) Status(processName string) {
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	
-	fmt.Fprintln(w, " Name\t| Duration\t| Status\t")
-	fmt.Fprintln(w, " ----\t| --------\t| ------\t")
+	fmt.Fprintln(w, " Name\t| Duration\t| Status\t| PID\t")
+	fmt.Fprintln(w, " ----\t| --------\t| ------\t| ---\t")
 	for j := range(m.process[processName]){
 		m.process[processName][j].Status(w)
 	
@@ -132,8 +152,11 @@ func (m *MasterSupervisor) Shell() {
 		case "status":
 			m.Status(cmd[1])
 		case "stop":
+			m.Stop(cmd[1])
 		case "start":
 			m.Start(cmd[1])
+		case "load":
+			// m.Start(cmd[1])
 		case "help":
 			cmdParser.Help()
 		}
