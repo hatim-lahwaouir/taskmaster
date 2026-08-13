@@ -38,6 +38,7 @@ type Processes struct {
 	AutoRestart string 					`yaml:"autorestart" validate:"required,oneof=unexpected always never"`
 	StartRetries int 					`yaml:"startretries" validate:"required,min=0"`
 	StartTime int64  					`yaml:"starttime" validate:"required,min=0"`
+	StopTime int64  					`yaml:"stoptime" validate:"required,min=0"`
 	Stdout string 						`yaml:"stdout"`
 	Stderr string 						`yaml:"stderr"`
 	ExitCodes any 						`yaml:"exitcodes" validate:"required"`

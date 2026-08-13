@@ -2,6 +2,7 @@ package supervisor
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"sync"
@@ -17,6 +18,8 @@ import (
 
 
 type ProcesseSupervisor struct {
+
+	Id int
 	Name string
 	Cmd string 		
 	ExecCmd *exec.Cmd									
@@ -33,7 +36,7 @@ type ProcesseSupervisor struct {
 	ExitCodes map[int]bool							
 	Env map[string]string
 	StopSingal os.Signal
-	
+	StopTime int64
 	// to check status 
 	StartedAt time.Time
 
@@ -52,6 +55,8 @@ type ProcesseSupervisor struct {
 	// mutext 
 
 	mu sync.RWMutex
+
+	cuRetry int
 }
 
 
@@ -85,6 +90,7 @@ func NewProcesseSupervisor(p *parser.Processes, wg *sync.WaitGroup) *ProcesseSup
 		Stderr:       p.Stderr,
 		ExitCodes:    exitCodes, 
 		Env:          p.Env,
+		StopTime: p.StopTime,
 		StopSingal: p.GetSingal(),
 		wg: wg,
 	}
@@ -97,30 +103,71 @@ func (p *ProcesseSupervisor) Status(w *tabwriter.Writer) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	if p.Stoped.Load() {
-		fmt.Fprintf(w," %s\t| -1\t| stoped\t| -1\t\n", p.Name)
+		fmt.Fprintf(w," %s\t| -1\t| stoped\t| -1\t\n", p)
 		return
 	}
 	duration := time.Since(p.StartedAt).Round(time.Millisecond)
 
 	if p.StartedAt.Add(time.Duration(p.StartTime * int64(time.Second))).Compare(time.Now()) > 0{
-		fmt.Fprintf(w," %s\t| %s\t| started\t| %d\t\n", p.Name, duration, p.ExecCmd.Process.Pid)
+		fmt.Fprintf(w," %s\t| %s\t| started\t| %d\t\n", p, duration, p.ExecCmd.Process.Pid)
 		return 
 	}
 
-	fmt.Fprintf(w," %s\t| %s\t| running\t| %d\t\n", p.Name, duration, p.ExecCmd.Process.Pid)
+	fmt.Fprintf(w," %s\t| %s\t| running\t| %d\t\n", p, duration, p.ExecCmd.Process.Pid)
 }
 
 func (p *ProcesseSupervisor) Stop() {
-	p.Stoped.Store(true)
+
+	defer p.wg.Done()
 	
 	p.mu.Lock()
-	p.ExecCmd.Process.Kill()
+	if p.ExecCmd.Process != nil {
+		p.ExecCmd.Process.Signal(p.StopSingal)
+	}
+	deadline := time.Now().Add(time.Second * time.Duration(p.StopTime))
+	p.mu.Unlock()
+
+
+
+	for time.Now().Before(deadline) {
+	
+		p.mu.Lock()
+		fmt.Println(p.ExecCmd.ProcessState)
+		if p.ExecCmd.ProcessState != nil {
+			p.Stoped.Store(true)
+			p.mu.Unlock()
+			return 
+		}
+		p.mu.Unlock()
+		time.Sleep(500 * time.Millisecond)
+	}
+
+
+	p.mu.Lock()
+	if p.ExecCmd.ProcessState == nil {
+		p.Stoped.Store(true)
+		fmt.Println(p.ExecCmd.ProcessState)
+		p.ExecCmd.Process.Kill()
+	}
 	p.mu.Unlock()
 }
 
 
 
-// we need to start processes if autostart was set to true 
+func (p *ProcesseSupervisor) KillProcess() {
+
+	if p.Stoped.Load() {
+		return
+	}
+
+	p.Stoped.Store(true)
+
+	p.mu.Lock()
+	if p.ExecCmd.Process != nil {
+		p.ExecCmd.Process.Kill()
+	}
+	p.mu.Unlock()
+}
 
 
 func (p *ProcesseSupervisor) InitCmd() *errorshandling.ErrorReporter {
@@ -205,10 +252,25 @@ func (p *ProcesseSupervisor) exitCode() int {
 }
 
 
+func (p *ProcesseSupervisor) String() string {
+	return fmt.Sprintf("%d:%s", p.Id, p.Name)
+}
+
 
 func (p *ProcesseSupervisor) MustStop(exitCode int ) bool {
+	
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	
+	
+	if p.cuRetry <= p.StartRetries {
+		return false
+	}
+
+
+
 	if p.AutoRestart == "always"{
-		return true
+		return false
 	}
 
 
@@ -222,12 +284,20 @@ func (p *ProcesseSupervisor) MustStop(exitCode int ) bool {
 }
 
 
+func (p *ProcesseSupervisor) Loop() bool {
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.cuRetry++
+	return p.cuRetry <= p.StartRetries
+}
+
 func (p *ProcesseSupervisor) Start() {
 	defer p.wg.Done()
 	p.Stoped.Store(false)
 	defer p.Stoped.Store(true)
-
-	for i := 0 ; i < p.StartRetries; i++ {
+	p.ResetCurRetry()
+	for p.Loop() {
 			p.StartedAt = time.Now()
 			if p.Stoped.Load() == true{
 				break
@@ -244,18 +314,57 @@ func (p *ProcesseSupervisor) Start() {
 	
 
 			exitCode := p.exitCode()
-			// check if it need to be restarted 
 			p.CleanResources()
-			if i == p.StartRetries - 1 {
-				if p.MustStop(exitCode){
-					break
-				}else {
-					i = -1
-				}
+		
+			// check if it need to be restarted 
+			if p.MustStop(exitCode){
+				break
 			}
 	}
-	p.Stoped.Store(true)
+}
 
+func (p *ProcesseSupervisor) CanbeUpdated(newp *parser.Processes) bool {
+	if p.Cmd != newp.Cmd || p.WorkingDIr != newp.WorkingDIr {
+		return false
+	}
+	if p.Stderr != newp.Stderr || p.Stdout != newp.Stdout {
+		return false
+	}
+	if p.Umask != fmt.Sprintf("%03o", newp.Umask) {
+		return false
+	}
+
+	if !maps.Equal(p.Env, newp.Env) {
+		return false
+	}
+
+	return true
+}
+
+func (p *ProcesseSupervisor) Update(newp *parser.Processes) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.AutoStart = newp.AutoStart
+	p.AutoRestart = newp.AutoRestart
+	p.StartRetries = newp.StartRetries
+	p.StartTime = newp.StartTime
+	p.StopTime = newp.StopTime
+	exitCodes := make(map[int]bool)
+	if exitcodes, ok := newp.ExitCodes.([]int); ok{
+		for i := range(exitcodes){
+			exitCodes[exitcodes[i]] = true
+		}
+	}
+	if exitcodes, ok := newp.ExitCodes.(int); ok{
+			exitCodes[exitcodes] = true
+	}
+	p.ExitCodes = exitCodes
 }
 
 
+func (p *ProcesseSupervisor) ResetCurRetry(){
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.cuRetry = 0
+}

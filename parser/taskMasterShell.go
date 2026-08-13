@@ -35,18 +35,13 @@ func (p *ParseCmds) ParseInput(input string) ([]string, *errorshandling.ErrorRep
 		return nil, errorshandling.NewErrorReporter(errorshandling.ErrInvalidCMD, input)
 	}
 
-	if cmd[0] == "help" && len(cmd) == 1 {
+	if ( cmd[0] == "help" || cmd[0] == "load" ) && len(cmd) == 1 {
 		return cmd,nil
 	}
 
 	if len(cmd) != 2 {
 		return nil, errorshandling.NewErrorReporter(errorshandling.ErrInvalidCMD, " args must be provided correctly " + input)
 	}
-
-	if cmd[0] == "load" {
-		return cmd, nil
-	}
-
 
 	if _, ok := p.programsName[cmd[1]] ; !ok {
 		return nil, errorshandling.NewErrorReporter(errorshandling.ErrInvalidCMD, " args must be provided correctly " + input)
@@ -63,7 +58,7 @@ func (p *ParseCmds) ParseInput(input string) ([]string, *errorshandling.ErrorRep
 
 func (p *ParseCmds) Help(){
 
-	fmt.Println("available cmds: [help, (status, start, stop) program name, load config_file.yml ]")
+	fmt.Println("available cmds: [help, load, (status, start, stop) program name]")
 }
 
 

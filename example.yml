@@ -1,16 +1,16 @@
 programs:
-  nginx:
+  nginx4:
     cmd: "/home/hlahwaou/bin/main"
-    numprocs: 5
+    numprocs: 1
     umask: 012
     workingdir: /tmp
     autostart: false
-    autorestart: unexpected
+    autorestart: always
     exitcodes:
       - 0
       - 2
     startretries: 1
-    starttime: 15
+    starttime: 13
     stopsignal: TERM
     stoptime: 10
     stdout: /tmp/main.stdout
@@ -18,14 +18,14 @@ programs:
     env:
       STARTED_BY: taskmaster
       ANSWER: 42
-  nginx1:
+  nginx5:
     cmd: "/home/hlahwaou/bin/main"
-    numprocs: 1
+    numprocs: 2
     umask: 024
     workingdir: /tmp
-    autostart: false
-    autorestart: unexpected
-    exitcodes: 10 
+    autostart: true
+    autorestart: always
+    exitcodes: 5 
     startretries: 1
     starttime: 5
     stopsignal: TERM
