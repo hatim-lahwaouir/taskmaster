@@ -237,8 +237,8 @@ func (p *ProcesseSupervisor) startCmd() error {
 
 
 func (p *ProcesseSupervisor) exitCode() int {
-	err := p.ExecCmd.Wait()
-	fmt.Printf("Process exited. Result: %v\n", err)
+	p.ExecCmd.Wait()
+
 
 	p.mu.RLock()
 	defer p.mu.RUnlock()

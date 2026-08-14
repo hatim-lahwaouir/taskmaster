@@ -7,6 +7,7 @@ import (
 	"os"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"text/tabwriter"
 	"time"
@@ -22,6 +23,7 @@ type  MasterSupervisor  struct {
 	process map[string][]*ProcesseSupervisor
 	wg sync.WaitGroup
 	id 	   int
+	shutdown atomic.Bool
 }
 
 
@@ -55,6 +57,17 @@ func (m *MasterSupervisor) AddProcess(p *parser.Processes) {
 	m.id++
 	m.process[p.Name] = append(m.process[p.Name],prcs)
 }
+
+
+func (m *MasterSupervisor) KillProcess(processName string) {
+
+		fmt.Println("killing process ", processName)
+		for i := range(m.process[processName]){
+			m.process[processName][i].KillProcess()
+		}
+}
+
+
 
 
 func (m *MasterSupervisor) Print() {
@@ -94,10 +107,7 @@ func (m *MasterSupervisor) LoadConfig(p []*parser.Processes) {
 		if mp[k] == true {
 			continue
 		}
-		fmt.Println("killing process ", k)
-		for i := range(m.process[k]){
-			m.process[k][i].KillProcess()
-		}
+		m.KillProcess(k)
 		delete(m.process, k)
 	}
 
@@ -113,25 +123,26 @@ func (m *MasterSupervisor) LoadConfig(p []*parser.Processes) {
 			if m.process[k][0].CanbeUpdated(p[i]){
 				// update all the process
 				for p[i].NumProcs > len(m.process[k]){
-					fmt.Println("adding new Process to", k)
 					m.AddProcess(p[i])
 				}
 				for p[i].NumProcs < len(m.process[k]){
 					m.process[k][len(m.process[k])-1].KillProcess() 
 					m.process[k] = m.process[k][:len(m.process[k])-1]
 				}
-
-				
 				for j := range m.process[k]{
 					m.process[k][j].Update(p[i])
 				}
+				fmt.Println("num procs >>", p[i].NumProcs, len(m.process[k]))
 			}else {
-				fmt.Println("can't be updated", k)
-				
+				// kill all these processes and add new one
+				m.KillProcess(k)
+				delete(m.process, k)
+				for j := 0; j < p[i].NumProcs; j++ {
+					m.AddProcess(p[i])
+				}
 			}
 		} else {
 			m.AddProcess(p[i])
-			fmt.Println("we need to Add", k)
 		}
 	}
 
@@ -224,16 +235,32 @@ func (m *MasterSupervisor) Wait() {
 
 
 
+func (m *MasterSupervisor) Shutdown() {
+	m.shutdown.Store(true)
+	for processName := range m.process{
+		// kill all processes
+		m.KillProcess(processName)
+	}
+	
+	
+}
+
 
 func (m *MasterSupervisor) Shell() {
 	
 
 	cmdParser := parser.NewParseCmds(slices.Collect(maps.Keys(m.process)) )
-
+	reader := bufio.NewReader(os.Stdin)
 
 	for ;; {
-		reader := bufio.NewReader(os.Stdin)
+		
 		time.Sleep(100 * time.Millisecond)
+
+		fmt.Println(m.shutdown.Load())
+		if m.shutdown.Load(){
+			return 
+		}
+
 		fmt.Print("taskmaster> ")
 		input, err := reader.ReadString('\n')
 		if err != nil {
@@ -259,6 +286,8 @@ func (m *MasterSupervisor) Shell() {
 			m.Load()
 		case "help":
 			cmdParser.Help()
+		case "shutdown":
+			m.Shutdown()
 		}
 
 	}
