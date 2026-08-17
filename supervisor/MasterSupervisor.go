@@ -1,18 +1,18 @@
 package supervisor
 
 import (
-	"bufio"
+	"bytes"
 	"fmt"
+	"log"
 	"maps"
+	"net"
 	"os"
 	"slices"
 	"sync"
 	"sync/atomic"
 	"syscall"
 	"text/tabwriter"
-	"time"
 
-	"github.com/hatim-lahwaouir/taskmaster/errorshandling"
 	"github.com/hatim-lahwaouir/taskmaster/parser"
 )
 
@@ -24,6 +24,9 @@ type  MasterSupervisor  struct {
 	wg sync.WaitGroup
 	id 	   int
 	shutdown atomic.Bool
+	buffer bytes.Buffer 
+	clients map[int]*Client
+	request chan *Msg
 }
 
 
@@ -33,7 +36,7 @@ type  MasterSupervisor  struct {
 
 func NewMasterSupervisor(p []*parser.Processes) *MasterSupervisor{
 	process := make(map[string][]*ProcesseSupervisor)
-	m := MasterSupervisor{process:  process}
+	m := MasterSupervisor{process:  process, clients: make(map[int]*Client), request: make(chan *Msg, 10)}
 	
 
 	for i := range(p){
@@ -61,7 +64,6 @@ func (m *MasterSupervisor) AddProcess(p *parser.Processes) {
 
 func (m *MasterSupervisor) KillProcess(processName string) {
 
-		fmt.Println("killing process ", processName)
 		for i := range(m.process[processName]){
 			m.process[processName][i].KillProcess()
 		}
@@ -70,22 +72,13 @@ func (m *MasterSupervisor) KillProcess(processName string) {
 
 
 
-func (m *MasterSupervisor) Print() {
-
-	for i := range(m.process){
-		for j := range(m.process[i]){
-			fmt.Printf("%v\n", m.process[i][j])
-		}
-	}
-}
 
 
 func (m *MasterSupervisor) logs(v ...any) {
 
-	fmt.Printf("taskmaster>")
-
 	for i := range(v){
-		fmt.Printf(" %v",v[i])
+		fmt.Fprintf(&m.buffer," %v",v[i])
+
 	}
 	fmt.Println()
 }
@@ -132,7 +125,6 @@ func (m *MasterSupervisor) LoadConfig(p []*parser.Processes) {
 				for j := range m.process[k]{
 					m.process[k][j].Update(p[i])
 				}
-				fmt.Println("num procs >>", p[i].NumProcs, len(m.process[k]))
 			}else {
 				// kill all these processes and add new one
 				m.KillProcess(k)
@@ -199,7 +191,7 @@ func (m *MasterSupervisor) Stop(processName string) {
 
 func (m *MasterSupervisor) Status(processName string) {
 
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	w := tabwriter.NewWriter(&m.buffer, 0, 0, 2, ' ', 0)
 	
 	fmt.Fprintln(w, " Name\t| Duration\t| Status\t| PID\t")
 	fmt.Fprintln(w, " ----\t| --------\t| ------\t| ---\t")
@@ -247,28 +239,19 @@ func (m *MasterSupervisor) Shutdown() {
 
 
 func (m *MasterSupervisor) Shell() {
-	
+	m.wg.Add(1)
+	defer m.wg.Done()
 
 	cmdParser := parser.NewParseCmds(slices.Collect(maps.Keys(m.process)) )
-	reader := bufio.NewReader(os.Stdin)
 
 	for ;; {
-		
-		time.Sleep(100 * time.Millisecond)
 
-		fmt.Println(m.shutdown.Load())
+		
 		if m.shutdown.Load(){
 			return 
 		}
-
-		fmt.Print("taskmaster> ")
-		input, err := reader.ReadString('\n')
-		if err != nil {
-			fmt.Println()
-			errorshandling.NewErrorReporter(errorshandling.ErrTaskMaster, err.Error() + " can't read stdin").Report()
-			continue
-		}
-		cmd, errParsing := cmdParser.ParseInput(input) 
+		msg := <- m.request
+		cmd, errParsing := cmdParser.ParseInput(msg.GetMesg()) 
 		if errParsing != nil {
 			errParsing.Report()
 			continue
@@ -290,8 +273,59 @@ func (m *MasterSupervisor) Shell() {
 			m.Shutdown()
 		}
 
+		if m.buffer.Len() != 0 {
+			m.clients[msg.GetClientID()].WriteGorotine(m.buffer.Bytes())
+			m.buffer.Reset()
+		}
 	}
 }
+
+
+func (m *MasterSupervisor) Server() {
+		// 1. Remove the old socket file if it exists to avoid "address already in use" errors.
+	socketPath := "/tmp/taskmaster.sock"
+	if err := os.RemoveAll(socketPath); err != nil {
+		log.Fatalf("Failed to clean up socket file: %v", err)
+	}
+
+	// 2. Start the Unix domain socket listener
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		log.Fatalf("Failed to listen on %s: %v", socketPath, err)
+	}
+	defer listener.Close()
+
+
+	// 3. Keep accepting client connections indefinitely
+	for {
+		conn, err := listener.Accept()
+
+		if err != nil {
+			log.Printf("Failed to accept connection: %v", err)
+			continue
+		}
+	
+		if len(m.clients) >= 3 {
+			newClient :=  NewClient(conn, m.request)
+			newClient.WriteGorotine([]byte("we can't add more then 3 clients"))
+			continue
+		}
+
+		newClient :=  NewClient(conn, m.request)
+		// add NEw Client
+		m.clients[newClient.ID()] = newClient
+		go m.clients[newClient.ID()].ReadGorotine(&m.wg)
+		// cleanning other connections 
+
+		// deleting clients 
+		for key := range(m.clients){
+			if m.clients[key].IsBad(){
+				delete(m.clients, key)
+			}
+		}
+	}
+}
+	
 
 
 

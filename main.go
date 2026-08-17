@@ -41,7 +41,8 @@ func main(){
 	go signalHandler.Handler(&wg)
 
 	master.InitProcesses()
-	master.Shell()
+	go master.Shell()
+	master.Server()
 	master.Wait()
 
 
