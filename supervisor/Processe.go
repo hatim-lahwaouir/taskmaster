@@ -57,6 +57,7 @@ type ProcesseSupervisor struct {
 	mu sync.RWMutex
 
 	cuRetry int
+	shutdowning atomic.Bool
 }
 
 
@@ -118,6 +119,8 @@ func (p *ProcesseSupervisor) Status(w *tabwriter.Writer) {
 
 func (p *ProcesseSupervisor) Stop() {
 
+	p.shutdowning.Store(true)
+	defer p.shutdowning.Store(false)
 	defer p.wg.Done()
 	
 	p.mu.Lock()
@@ -160,11 +163,17 @@ func (p *ProcesseSupervisor) KillProcess() {
 		return
 	}
 
-	p.Stoped.Store(true)
+	
 
 	p.mu.Lock()
 	if p.ExecCmd.Process != nil {
+		fmt.Println("kiling process !" , p)
 		p.ExecCmd.Process.Kill()
+
+		// wait for it to be stoped 
+		for p.Stoped.Load(){
+			time.Sleep(100 * time.Millisecond)
+		}
 	}
 	p.mu.Unlock()
 }
@@ -262,23 +271,24 @@ func (p *ProcesseSupervisor) MustStop(exitCode int ) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	
-	
-	if p.cuRetry <= p.StartRetries {
-		return false
-	}
-
-
-
 	if p.AutoRestart == "always"{
+		p.cuRetry = 0
 		return false
 	}
+	
+
 
 
 	if p.AutoRestart == "unexpected"{
 		_, ok := p.ExitCodes[exitCode]
+		p.cuRetry--
 		return !ok
 	}
 
+
+	if p.cuRetry <= p.StartRetries {
+		return false
+	}
 
 	return true
 }
@@ -298,12 +308,13 @@ func (p *ProcesseSupervisor) Start() {
 	defer p.Stoped.Store(true)
 	p.ResetCurRetry()
 	for p.Loop() {
+
+
 			p.StartedAt = time.Now()
 			if p.Stoped.Load() == true{
 				break
 			}
 			if err := p.InitCmd(); err != nil {
-				err.Report()
 				continue
 			}
 

@@ -38,7 +38,8 @@ func (r *RealoadConfigSig) Handler(wg *sync.WaitGroup) {
 		case <- r.sig:
 			processes, err := r.ymlParser.Start()
 			if err  != nil {
-				err.Report()
+				err.Report(&r.master.Buffer)
+				r.master.LoadingConfig.Store(false)
 				continue
 			}
 			r.master.LoadConfig(processes)

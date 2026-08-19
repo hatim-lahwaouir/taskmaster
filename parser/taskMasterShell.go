@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 
@@ -23,7 +24,7 @@ func NewParseCmds(programNames []string) *ParseCmds{
 		mp[programNames[s]] = true
 	}
 
-	return &ParseCmds{programsName:  mp, validCmd:  map[string]bool{ "status" : true, "stop" : true, "start" : true, "shutdown" : true, "help" : true, "load" : true,},
+	return &ParseCmds{programsName:  mp, validCmd:  map[string]bool{ "status" : true, "stop" : true, "start" : true, "shutdown" : true, "help" : true, "load" : true,"restart": true,},
 	cmdWithoutArgs: map[string]bool{ "shutdown" : true, "help" : true, "load" : true,},}
 }
 
@@ -64,15 +65,15 @@ func (p *ParseCmds) ParseInput(input string) ([]string, *errorshandling.ErrorRep
 }
 
 
-func (p *ParseCmds) Help(){
+func (p *ParseCmds) Help(b *bytes.Buffer) {
 
-	fmt.Println("available cmds: [help, load,shutdown, (status, start, stop) program name]")
-	fmt.Println("load    : do it if you change the config.yml file")
-	fmt.Println("shutdown: to shutdown you supervisor")
-	fmt.Println("status  : status of a process [process name]")
-	fmt.Println("stop    : to stop a process [process name]")
-	fmt.Println("restart : to restart a process [process name]")
-	fmt.Println("help    : to see available cmds")
+	fmt.Fprintln(b,"available cmds: [help, load,shutdown, (status, start, stop) program name]")
+	fmt.Fprintln(b,"load    : do it if you change the config.yml file")
+	fmt.Fprintln(b,"shutdown: to shutdown you supervisor")
+	fmt.Fprintln(b,"status  : status of a process [process name]")
+	fmt.Fprintln(b,"stop    : to stop a process [process name]")
+	fmt.Fprintln(b,"restart : to restart a process [process name]")
+	fmt.Fprintln(b,"help    : to see available cmds")
 }
 
 

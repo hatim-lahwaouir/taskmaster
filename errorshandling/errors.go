@@ -1,8 +1,8 @@
 package errorshandling
 
 import (
+	"bytes"
 	"fmt"
-	"os"
 )
 
 
@@ -36,10 +36,10 @@ func NewErrorReporter(err Error, v any) *ErrorReporter{
 
 
 func (e *ErrorReporter) String() string {
-	return fmt.Sprintf("taskmaster> %s : %v", e.err, e.v)
+	return fmt.Sprintf("%s : %v", e.err, e.v)
 }
 
 
-func (e *ErrorReporter) Report(){
-	fmt.Fprintf(os.Stderr, "%v\n", e)
+func (e *ErrorReporter) Report(b *bytes.Buffer) {
+	fmt.Fprintf(b, "%v\n", e)
 }

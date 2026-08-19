@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"syscall"
 	"text/tabwriter"
+	"time"
 
 	"github.com/hatim-lahwaouir/taskmaster/parser"
 )
@@ -24,9 +25,13 @@ type  MasterSupervisor  struct {
 	wg sync.WaitGroup
 	id 	   int
 	shutdown atomic.Bool
-	buffer bytes.Buffer 
+	Buffer bytes.Buffer 
 	clients map[int]*Client
 	request chan *Msg
+	listener net.Listener
+	cmdParser *parser.ParseCmds
+	mu sync.Mutex
+	LoadingConfig atomic.Bool
 }
 
 
@@ -77,8 +82,7 @@ func (m *MasterSupervisor) KillProcess(processName string) {
 func (m *MasterSupervisor) logs(v ...any) {
 
 	for i := range(v){
-		fmt.Fprintf(&m.buffer," %v",v[i])
-
+		fmt.Fprintf(&m.Buffer,"%v ",v[i])
 	}
 	fmt.Println()
 }
@@ -86,11 +90,16 @@ func (m *MasterSupervisor) logs(v ...any) {
 
 func (m *MasterSupervisor) LoadConfig(p []*parser.Processes) {
 	fmt.Println("loading cofing", len(p))
+	m.LoadingConfig.Store(true)
+	defer m.LoadingConfig.Store(false)
+
 	var (
 		mp map[string]bool
 	)
 	mp = make(map[string]bool)
 
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	// remove process that no longer exitsts
 	for prcs := range(p){
 		mp[p[prcs].Name] = true
@@ -138,7 +147,7 @@ func (m *MasterSupervisor) LoadConfig(p []*parser.Processes) {
 		}
 	}
 
-
+	m.cmdParser = parser.NewParseCmds(slices.Collect(maps.Keys(m.process)) )
 	m.InitProcesses()
 }
 
@@ -158,40 +167,92 @@ func (m *MasterSupervisor) InitProcesses() {
 
 
 func (m *MasterSupervisor) Start(processName string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
+	w := tabwriter.NewWriter(&m.Buffer, 0, 0, 2, ' ', 0)
+	
+	fmt.Fprintln(w, " Name\t| Status\t")
+	fmt.Fprintln(w, " ----\t| ------\t")
+	
 	for j := range(m.process[processName]){
 		p := m.process[processName][j]
 		if p.Stoped.Load() == true {
-			m.logs("starting" , p)
+			fmt.Fprintf(w," %s\t| %s\t\n", p, "starting")
 			m.wg.Add(1)
 			go m.process[processName][j].Start()
 		}else {
-			m.logs("already started" , p)
+			fmt.Fprintf(w," %s\t| %s\t\n", p, "already started")
 		}
 	}
+	w.Flush()
 }
 
 
+func (m *MasterSupervisor) Restart(processName string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	w := tabwriter.NewWriter(&m.Buffer, 0, 0, 2, ' ', 0)
+	
+	fmt.Fprintln(w, " Name\t| Status\t")
+	fmt.Fprintln(w, " ----\t| ------\t")
+	
+	for j := range(m.process[processName]){
+		p := m.process[processName][j]
+		if p.Stoped.Load() == true {
+			fmt.Fprintf(w," %s\t| %s\t\n", p, "starting, already stoped")
+		}else {
+			fmt.Fprintf(w," %s\t| %s\t\n", p, "already started, restarting it")
+			m.process[processName][j].KillProcess()
+		}
+	}
+	w.Flush()
+
+	time.Sleep(time.Second * 1)
+	for j := range(m.process[processName]){
+		m.wg.Add(1)
+		go m.process[processName][j].Start()
+	}
+
+}
+
+
+
+
 func (m *MasterSupervisor) Stop(processName string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	w := tabwriter.NewWriter(&m.Buffer, 0, 0, 2, ' ', 0)
+	
+		fmt.Fprintln(w, " Name\t| Status\t")
+		fmt.Fprintln(w, " ----\t| ------\t")
 
 	for j := range(m.process[processName]){
 		p := m.process[processName][j]
-		if p.Stoped.Load() == false {
-			m.logs("stoping" ,m.process[processName][j])
+
+		if p.shutdowning.Load(){
+			fmt.Fprintf(w," %s\t| %s\t\n", p, "in the process of stoping")
+		}else if p.Stoped.Load() == false {
+			fmt.Fprintf(w," %s\t| %s\t\n", p, "stoping")
 			m.wg.Add(1)
 			go m.process[processName][j].Stop()
 		}else {
-
-			m.logs("Already stoped",m.process[processName][j])
+			fmt.Fprintf(w," %s\t| %s\t\n", p, "already stoped")
 			// fmt.Println(, processName)
 		}
 	}
+
+	w.Flush()
 }
 
 
 func (m *MasterSupervisor) Status(processName string) {
 
-	w := tabwriter.NewWriter(&m.buffer, 0, 0, 2, ' ', 0)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	w := tabwriter.NewWriter(&m.Buffer, 0, 0, 2, ' ', 0)
 	
 	fmt.Fprintln(w, " Name\t| Duration\t| Status\t| PID\t")
 	fmt.Fprintln(w, " ----\t| --------\t| ------\t| ---\t")
@@ -233,8 +294,13 @@ func (m *MasterSupervisor) Shutdown() {
 		// kill all processes
 		m.KillProcess(processName)
 	}
-	
-	
+
+	for c := range(m.clients){
+		m.clients[c].conn.Close()
+	}
+	close(m.request)
+
+	m.listener.Close()
 }
 
 
@@ -242,18 +308,25 @@ func (m *MasterSupervisor) Shell() {
 	m.wg.Add(1)
 	defer m.wg.Done()
 
-	cmdParser := parser.NewParseCmds(slices.Collect(maps.Keys(m.process)) )
+	m.cmdParser = parser.NewParseCmds(slices.Collect(maps.Keys(m.process)) )
 
 	for ;; {
 
 		
+
 		if m.shutdown.Load(){
 			return 
 		}
 		msg := <- m.request
-		cmd, errParsing := cmdParser.ParseInput(msg.GetMesg()) 
+
+		m.mu.Lock()
+		cmd, errParsing := m.cmdParser.ParseInput(msg.GetMesg()) 
+		m.mu.Unlock()
+		
 		if errParsing != nil {
-			errParsing.Report()
+			errParsing.Report(&m.Buffer)
+			m.clients[msg.GetClientID()].WriteGorotine(m.Buffer.Bytes())
+			m.Buffer.Reset()
 			continue
 		}
 
@@ -265,44 +338,50 @@ func (m *MasterSupervisor) Shell() {
 			m.Stop(cmd[1])
 		case "start":
 			m.Start(cmd[1])
+		case "restart":
+			m.Restart(cmd[1])
 		case "load":
+			m.LoadingConfig.Store(true)
 			m.Load()
+			// waiting for config to be loaded 
+			for m.LoadingConfig.Load() {
+				time.Sleep(50 * time.Millisecond)
+			}
 		case "help":
-			cmdParser.Help()
+			m.cmdParser.Help(&m.Buffer)
 		case "shutdown":
 			m.Shutdown()
 		}
 
-		if m.buffer.Len() != 0 {
-			m.clients[msg.GetClientID()].WriteGorotine(m.buffer.Bytes())
-			m.buffer.Reset()
+		if m.Buffer.Len() != 0 {
+			m.clients[msg.GetClientID()].WriteGorotine(m.Buffer.Bytes())
+			m.Buffer.Reset()
 		}
 	}
 }
 
 
 func (m *MasterSupervisor) Server() {
-		// 1. Remove the old socket file if it exists to avoid "address already in use" errors.
+		// 1. Remove the old socket file ParseCMdif it exists to avoid "address already in use" errors.
 	socketPath := "/tmp/taskmaster.sock"
-	if err := os.RemoveAll(socketPath); err != nil {
+	err := os.RemoveAll(socketPath)
+	if err != nil {
 		log.Fatalf("Failed to clean up socket file: %v", err)
 	}
 
 	// 2. Start the Unix domain socket listener
-	listener, err := net.Listen("unix", socketPath)
+	m.listener, err = net.Listen("unix", socketPath)
 	if err != nil {
 		log.Fatalf("Failed to listen on %s: %v", socketPath, err)
 	}
-	defer listener.Close()
 
-
-	// 3. Keep accepting client connections indefinitely
+	
 	for {
-		conn, err := listener.Accept()
+		conn, err := m.listener.Accept()
 
 		if err != nil {
 			log.Printf("Failed to accept connection: %v", err)
-			continue
+			return
 		}
 	
 		if len(m.clients) >= 3 {
@@ -314,6 +393,7 @@ func (m *MasterSupervisor) Server() {
 		newClient :=  NewClient(conn, m.request)
 		// add NEw Client
 		m.clients[newClient.ID()] = newClient
+		m.wg.Add(1)
 		go m.clients[newClient.ID()].ReadGorotine(&m.wg)
 		// cleanning other connections 
 

@@ -1,5 +1,5 @@
 programs:
-  nginx6:
+  nginx2:
     cmd: "/home/hlahwaou/bin/main"
     numprocs: 1
     umask: 012
@@ -18,16 +18,16 @@ programs:
     env:
       STARTED_BY: taskmaster
       ANSWER: 42
-  nginx5:
+  nginx22:
     cmd: "/home/hlahwaou/bin/script.sh"
     numprocs: 3
     umask: 024
     workingdir: /tmp
     autostart: true
-    autorestart: always
-    exitcodes: 3 
+    autorestart: unexpected
+    exitcodes: 1
     startretries: 1
-    starttime: 5
+    starttime: 50
     stopsignal: TERM
     stoptime: 10
     stdout: /tmp/second.txt
