@@ -103,6 +103,14 @@ func NewProcesseSupervisor(p *parser.Processes, wg *sync.WaitGroup) *ProcesseSup
 func (p *ProcesseSupervisor) Status(w *tabwriter.Writer) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
+
+
+	if p.shutdowning.Load() {
+		fmt.Fprintf(w," %s\t| -1\t| is shutdowning\t| -1\t\n", p)
+		return
+	}
+
+
 	if p.Stoped.Load() {
 		fmt.Fprintf(w," %s\t| -1\t| stoped\t| -1\t\n", p)
 		return
@@ -120,6 +128,7 @@ func (p *ProcesseSupervisor) Status(w *tabwriter.Writer) {
 func (p *ProcesseSupervisor) Stop() {
 
 	p.shutdowning.Store(true)
+	defer p.Stoped.Store(true)
 	defer p.shutdowning.Store(false)
 	defer p.wg.Done()
 	
@@ -135,9 +144,8 @@ func (p *ProcesseSupervisor) Stop() {
 	for time.Now().Before(deadline) {
 	
 		p.mu.Lock()
-		fmt.Println(p.ExecCmd.ProcessState)
 		if p.ExecCmd.ProcessState != nil {
-			p.Stoped.Store(true)
+			p.ExecCmd.Wait()
 			p.mu.Unlock()
 			return 
 		}
@@ -148,9 +156,8 @@ func (p *ProcesseSupervisor) Stop() {
 
 	p.mu.Lock()
 	if p.ExecCmd.ProcessState == nil {
-		p.Stoped.Store(true)
-		fmt.Println(p.ExecCmd.ProcessState)
 		p.ExecCmd.Process.Kill()
+		p.ExecCmd.Wait()
 	}
 	p.mu.Unlock()
 }
@@ -165,15 +172,11 @@ func (p *ProcesseSupervisor) KillProcess() {
 
 	
 
+	p.Stoped.Store(true)
 	p.mu.Lock()
 	if p.ExecCmd.Process != nil {
-		fmt.Println("kiling process !" , p)
 		p.ExecCmd.Process.Kill()
-
-		// wait for it to be stoped 
-		for p.Stoped.Load(){
-			time.Sleep(100 * time.Millisecond)
-		}
+		p.ExecCmd.Wait()
 	}
 	p.mu.Unlock()
 }

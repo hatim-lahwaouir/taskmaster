@@ -1,5 +1,5 @@
 programs:
-  nginx2:
+  nginx21:
     cmd: "/home/hlahwaou/bin/main"
     numprocs: 1
     umask: 012
@@ -24,10 +24,10 @@ programs:
     umask: 024
     workingdir: /tmp
     autostart: true
-    autorestart: unexpected
+    autorestart: always
     exitcodes: 1
-    startretries: 1
-    starttime: 50
+    startretries: 3
+    starttime: 22
     stopsignal: TERM
     stoptime: 10
     stdout: /tmp/second.txt

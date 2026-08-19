@@ -1,8 +1,8 @@
 package errorshandling
 
 import (
-	"bytes"
 	"fmt"
+	"os"
 )
 
 
@@ -40,6 +40,6 @@ func (e *ErrorReporter) String() string {
 }
 
 
-func (e *ErrorReporter) Report(b *bytes.Buffer) {
-	fmt.Fprintf(b, "%v\n", e)
+func (e *ErrorReporter) Report() {
+	fmt.Fprintf(os.Stderr, "%v\n", e)
 }

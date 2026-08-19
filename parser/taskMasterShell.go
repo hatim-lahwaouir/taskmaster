@@ -1,8 +1,8 @@
 package parser
 
 import (
-	"bytes"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/hatim-lahwaouir/taskmaster/errorshandling"
@@ -65,15 +65,15 @@ func (p *ParseCmds) ParseInput(input string) ([]string, *errorshandling.ErrorRep
 }
 
 
-func (p *ParseCmds) Help(b *bytes.Buffer) {
+func (p *ParseCmds) Help() {
 
-	fmt.Fprintln(b,"available cmds: [help, load,shutdown, (status, start, stop) program name]")
-	fmt.Fprintln(b,"load    : do it if you change the config.yml file")
-	fmt.Fprintln(b,"shutdown: to shutdown you supervisor")
-	fmt.Fprintln(b,"status  : status of a process [process name]")
-	fmt.Fprintln(b,"stop    : to stop a process [process name]")
-	fmt.Fprintln(b,"restart : to restart a process [process name]")
-	fmt.Fprintln(b,"help    : to see available cmds")
+	fmt.Fprintln(os.Stdout,"available cmds: [help, load,shutdown, (status, start, stop) program name]")
+	fmt.Fprintln(os.Stdout,"load    : do it if you change the config.yml file")
+	fmt.Fprintln(os.Stdout,"shutdown: to shutdown you supervisor")
+	fmt.Fprintln(os.Stdout,"status  : status of a process [process name]")
+	fmt.Fprintln(os.Stdout,"stop    : to stop a process [process name]")
+	fmt.Fprintln(os.Stdout,"restart : to restart a process [process name]")
+	fmt.Fprintln(os.Stdout,"help    : to see available cmds")
 }
 
 

@@ -42,7 +42,6 @@ func main(){
 
 	master.InitProcesses()
 	go master.Shell()
-	master.Server()
 	master.Wait()
 
 
